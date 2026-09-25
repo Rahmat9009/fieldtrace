@@ -18,11 +18,12 @@ function normalizeTransfer(raw) {
   };
 }
 
-export function createSharedNetTransport({ roomDir, seatId, timeoutMs = 30000 }) {
-  if (process.platform === 'win32') throw new Error('Run the SharedNet worker in WSL or Linux');
+export function createSharedNetTransport({ roomDir, seatId, timeoutMs = 30000, commandRunner }) {
+  if (process.platform === 'win32' && !commandRunner) throw new Error('Run the SharedNet worker in WSL or Linux');
   if (!/^i_[A-Za-z0-9]{10}$/.test(seatId)) throw new TypeError('Invalid SharedNet seat');
   const executable = 'npx';
   async function run(verb, args = []) {
+    if (commandRunner) return commandRunner(verb, args, { roomDir, seatId });
     const { stdout } = await execFileAsync(executable, ['-y', 'sharednet@latest', verb, ...args, '--as', seatId], {
       cwd: roomDir, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, windowsHide: true,
     });
