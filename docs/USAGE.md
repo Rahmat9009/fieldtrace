@@ -80,7 +80,7 @@ sharednet say '{"type":"fieldtrace.order.v1","order_id":"ord_ada01","artifact_id
 In the room, as a reply to your order:
 
 - a **result artifact** with the converted JSON
-- a **receipt**: `validation` (`passed`, `validator`), the SHA-256 of the result and of the schema, `provenance` (`{path, source}` for each field), and `changes` (`{path, source, operation, from?, to?}`)
+- a **receipt**: `validation` (`passed`, `validator`), the SHA-256 of the input artifact, the result and the schema (`schema_sha256`), `provenance` (`{path, source}` for each field), and `changes` (`{path, source, operation, from?, to?}`)
 
 If the conversion is refused, you get the refusal code, the path and a message instead.
 
