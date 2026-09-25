@@ -15,13 +15,14 @@ function journalRecord(order) {
 /**
  * Transport contract:
  * - findTransfer(id) -> normalized ledger transfer or null
- * - download(id) -> {status:'found',bytes} | {status:'missing'|'temporary_error'}
+ * - download(id) -> {status:'found',bytes} | {status:'too_large'|'confirmed_failure'|'temporary_error'}
  * - upload(bytes, filename) -> {artifact_id}
  * - reply(messageId, content) -> {message_id}
  * No refund is executed here. Every refund decision is journaled for a
  * policy-aware executor to reconcile and perform once.
  */
-export async function handleRoomMessage({ message, transport, journal, adapt, price, sellerPrincipalId }) {
+export async function handleRoomMessage({ message, transport, journal, adapt, price, sellerPrincipalId,
+  now = () => new Date().toISOString(), artifactFailureMs = 180000 }) {
   let preflight;
   let order;
   try {
@@ -43,6 +44,14 @@ export async function handleRoomMessage({ message, transport, journal, adapt, pr
 
   if (!order) return { status: 'ignored' };
   const prior = journal.snapshot().records;
+  const existing = prior.find((record) => record.order_id === order.orderId
+    && record.transfer_id === order.transferId && record.artifact_id === order.artifactId);
+  if (existing && ['reserved', 'delivery_pending', 'reply_pending'].includes(existing.status)) {
+    // These states may follow an ambiguous adapter/upload/reply failure. Keep
+    // the message queued for reconciliation; never silently drop or repeat a
+    // potentially completed side effect.
+    return { status: 'retry_later', code: 'delivery_reconciliation_required' };
+  }
   const transfer = await transport.findTransfer(order.transferId);
   // Payment is checked before any artifact download. A malformed or absent
   // transfer cannot induce us to read a third party's private artifact.
@@ -57,7 +66,18 @@ export async function handleRoomMessage({ message, transport, journal, adapt, pr
     return paymentOnly;
   }
 
-  const artifact = await transport.download(order.artifactId);
+  let artifact = await transport.download(order.artifactId);
+  if (artifact.status === 'confirmed_failure') {
+    const at = now();
+    const failure = await journal.noteArtifactFailure(order.orderId, order.artifactId, order.transferId, at);
+    if (failure.attempts >= 2 && Date.parse(at) - Date.parse(failure.first_at) >= artifactFailureMs) {
+      artifact = { status: 'missing' };
+    } else {
+      artifact = { status: 'temporary_error' };
+    }
+  } else if (artifact.status === 'found') {
+    await journal.clearArtifactFailure(order.orderId);
+  }
   const decision = assessOrder({ order, transfer, artifact, prior, sellerPrincipalId, price });
   if (decision.status === 'retry_later' || decision.status === 'rejected') return decision;
   await journal.reserve(journalRecord(order));

@@ -99,3 +99,27 @@ test('orphan transfer is staged once for refund after a complete scan', async ()
     assert.equal(journal.snapshot().records[0].status, 'refund_pending');
   });
 });
+
+test('confirmed artifact failures become a refund after three minutes, while transient errors do not', async () => {
+  await withJournal(async (journal) => {
+    let current = '2026-09-25T12:00:00.000Z';
+    let downloadStatus = 'confirmed_failure';
+    const args = { message: orderMessage, journal, price: 8, sellerPrincipalId: seller,
+      now: () => current, adapt: () => { throw new Error('must not adapt'); },
+      transport: { findTransfer: async () => transfer,
+        download: async () => ({ status: downloadStatus }) },
+    };
+    assert.equal((await handleRoomMessage(args)).status, 'retry_later');
+    assert.equal(journal.snapshot().artifact_failures[orderId].attempts, 1);
+    current = '2026-09-25T12:02:59.000Z';
+    assert.equal((await handleRoomMessage(args)).status, 'retry_later');
+    current = '2026-09-25T12:03:00.000Z';
+    downloadStatus = 'temporary_error';
+    assert.equal((await handleRoomMessage(args)).status, 'retry_later');
+    assert.equal(journal.snapshot().artifact_failures[orderId].attempts, 2);
+    downloadStatus = 'confirmed_failure';
+    assert.equal((await handleRoomMessage(args)).status, 'refund_required');
+    assert.equal(journal.snapshot().records[0].status, 'refund_pending');
+    assert.equal(journal.snapshot().records[0].refund_reason, 'artifact_missing');
+  });
+});

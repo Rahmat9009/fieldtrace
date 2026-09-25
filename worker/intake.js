@@ -4,6 +4,7 @@ import {
 } from '../client/order.js';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+export const MAX_ARTIFACT_BYTES = 1024 * 1024;
 
 function parseEnvelope(message, type) {
   if (typeof message?.content !== 'string') return null;
@@ -70,10 +71,11 @@ export function verifyTransfer(order, transfer, { sellerPrincipalId, price }) {
 function inspectArtifact(artifact, expectedSha256) {
   if (!artifact || artifact.status === 'temporary_error') return { status: 'retry_later', code: 'artifact_unavailable' };
   if (artifact.status === 'missing') return { status: 'invalid', code: 'artifact_missing' };
+  if (artifact.status === 'too_large') return { status: 'invalid', code: 'artifact_too_large' };
   if (artifact.status !== 'found' || !Buffer.isBuffer(artifact.bytes)) {
     return { status: 'retry_later', code: 'artifact_unavailable' };
   }
-  if (artifact.bytes.length > 1024 * 1024) return { status: 'invalid', code: 'artifact_too_large' };
+  if (artifact.bytes.length > MAX_ARTIFACT_BYTES) return { status: 'invalid', code: 'artifact_too_large' };
   const digest = createHash('sha256').update(artifact.bytes).digest('hex');
   if (digest !== expectedSha256) return { status: 'invalid', code: 'artifact_hash_mismatch' };
   let request;

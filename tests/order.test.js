@@ -62,6 +62,7 @@ test('missing or altered payload takes a refund path only after payment verifica
   const missing = assessOrder({ order, transfer, artifact: { status: 'missing' }, ...context });
   assert.equal(missing.status, 'refund_required');
   assert.equal(missing.refund_amount, 8);
+  assert.equal(assessOrder({ order, transfer, artifact: { status: 'too_large' }, ...context }).code, 'artifact_too_large');
   assert.equal(assessOrder({ order, transfer, artifact: { status: 'temporary_error' }, ...context }).status, 'retry_later');
   assert.equal(assessOrder({ order, transfer, artifact: { status: 'found', bytes: Buffer.from('changed') }, ...context }).code, 'artifact_hash_mismatch');
   assert.equal(assessOrder({ order, transfer: { ...transfer, to: buyer }, artifact: { status: 'missing' }, ...context }).status, 'rejected');

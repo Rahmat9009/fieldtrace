@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-const emptyState = () => ({ schema_version: 1, cursor: 0, records: [], pending_messages: [] });
+const emptyState = () => ({ schema_version: 1, cursor: 0, records: [], pending_messages: [],
+  artifact_failures: {}, seen_order_ids: [], order_index_complete: true });
 
 /**
  * One-worker durable journal. A lock file prevents two local workers from
@@ -25,6 +26,13 @@ export async function openJournal(path) {
     }
     state.pending_messages ??= [];
     if (!Array.isArray(state.pending_messages)) throw new Error('Invalid FieldTrace pending messages');
+    state.artifact_failures ??= {};
+    state.seen_order_ids ??= [];
+    state.order_index_complete ??= state.cursor === 0;
+    if (!state.artifact_failures || typeof state.artifact_failures !== 'object'
+      || !Array.isArray(state.seen_order_ids) || typeof state.order_index_complete !== 'boolean') {
+      throw new Error('Invalid FieldTrace order index');
+    }
   } catch (error) {
     await lock.close();
     await unlink(lockPath);
@@ -79,6 +87,23 @@ export async function openJournal(path) {
     }),
     removeMessage: (messageId) => update((next) => {
       next.pending_messages = next.pending_messages.filter((item) => item.id !== messageId);
+    }),
+    noteArtifactFailure: (orderId, artifactId, transferId, at) => update((next) => {
+      const previous = next.artifact_failures[orderId];
+      const same = previous?.artifact_id === artifactId && previous?.transfer_id === transferId;
+      next.artifact_failures[orderId] = {
+        artifact_id: artifactId, transfer_id: transferId,
+        first_at: same ? previous.first_at : at,
+        attempts: same ? previous.attempts + 1 : 1,
+      };
+    }).then((next) => next.artifact_failures[orderId]),
+    clearArtifactFailure: (orderId) => update((next) => { delete next.artifact_failures[orderId]; }),
+    noteOrderId: (orderId) => update((next) => {
+      if (!next.seen_order_ids.includes(orderId)) next.seen_order_ids.push(orderId);
+    }),
+    completeOrderIndex: (orderIds) => update((next) => {
+      next.seen_order_ids = [...new Set([...next.seen_order_ids, ...orderIds])];
+      next.order_index_complete = true;
     }),
     close: async () => {
       await queue;

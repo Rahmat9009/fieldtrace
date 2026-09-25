@@ -38,3 +38,37 @@ test('CLI transport normalizes ledger fields and preserves artifact bytes', asyn
   assert.deepEqual((await transport.readPage(0)).items, []);
   assert.deepEqual(calls, ['ledger', 'download', 'upload', 'say', 'read']);
 });
+
+test('download distinguishes artifact-specific failures from general transport failures', async () => {
+  let reason = 'artifact_not_found: SharedNet rejected the request';
+  const transport = createSharedNetTransport({ roomDir: '/joined-room', seatId: 'i_AbCdEfGhIj',
+    commandRunner: async () => { throw new Error(reason); },
+  });
+  assert.equal((await transport.download('art_AbCdEfGhIj')).status, 'confirmed_failure');
+  reason = 'npx timed out';
+  assert.equal((await transport.download('art_AbCdEfGhIj')).status, 'temporary_error');
+});
+
+test('download refuses more than 1 MiB before reading the file', async () => {
+  const bytes = Buffer.alloc(1024 * 1024 + 1);
+  const transport = createSharedNetTransport({ roomDir: '/joined-room', seatId: 'i_AbCdEfGhIj',
+    commandRunner: async (_verb, args) => {
+      await writeFile(args[args.indexOf('--out') + 1], bytes);
+      return { sha256: createHash('sha256').update(bytes).digest('hex'), verified: true };
+    },
+  });
+  assert.deepEqual(await transport.download('art_AbCdEfGhIj'),
+    { status: 'too_large', size_bytes: bytes.length });
+});
+
+test('legacy order-index backfill uses filtered room reads', async () => {
+  const calls = [];
+  const transport = createSharedNetTransport({ roomDir: '/joined-room', seatId: 'i_AbCdEfGhIj',
+    commandRunner: async (verb, args) => {
+      calls.push([verb, args]);
+      return { items: [], has_more: false };
+    },
+  });
+  assert.deepEqual(await transport.readAllOrderIds(), { orderIds: [], historyComplete: true });
+  assert.deepEqual(calls[0], ['read', ['--after', '0', '--grep', 'fieldtrace.order', '--limit', '100']]);
+});
