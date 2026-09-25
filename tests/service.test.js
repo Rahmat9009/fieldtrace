@@ -47,11 +47,13 @@ test('a paid order delivers once and records the result before duplicate input',
   await withJournal(async (journal) => {
     let uploads = 0;
     let replies = 0;
+    let uploadedBytes;
+    let delivery;
     const transport = {
       findTransfer: async () => transfer,
       download: async () => ({ status: 'found', bytes: requestBytes }),
-      upload: async () => { uploads++; return { artifact_id: 'art_ZyXwVuTsRq' }; },
-      reply: async () => { replies++; return { message_id: 'msg_ZyXwVuTsRq' }; },
+      upload: async (bytes) => { uploads++; uploadedBytes = bytes; return { artifact_id: 'art_ZyXwVuTsRq' }; },
+      reply: async (_id, content) => { replies++; delivery = JSON.parse(content); return { message_id: 'msg_ZyXwVuTsRq' }; },
     };
     const args = { message: orderMessage, journal, transport, price: 8, sellerPrincipalId: seller,
       adapt: (request) => ({ status: 'ok', convertible: true, output: request.payload, provenance: [] }),
@@ -61,6 +63,9 @@ test('a paid order delivers once and records the result before duplicate input',
     assert.equal(uploads, 1);
     assert.equal(replies, 1);
     assert.equal(journal.snapshot().records[0].result_artifact_id, 'art_ZyXwVuTsRq');
+    assert.equal(delivery.result_artifact_sha256, createHash('sha256').update(uploadedBytes).digest('hex'));
+    assert.equal(delivery.receipt.target_kind, 'example_inferred');
+    assert.equal(delivery.receipt.input_artifact_sha256, hash);
   });
 });
 

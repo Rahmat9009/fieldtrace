@@ -78,14 +78,18 @@ export async function handleRoomMessage({ message, transport, journal, adapt, pr
   await journal.setStatus(order.orderId, 'delivery_pending');
   const sha256 = (value) => createHash('sha256').update(value).digest('hex');
   const target = decision.request.target_schema ?? decision.request.target_example;
+  const targetDigest = sha256(Buffer.from(JSON.stringify(target)));
+  const schemaProvided = decision.request.target_schema !== undefined;
   const receipt = {
-    claim: 'The delivered bytes conform to the supplied target for this conversion.',
-    input_sha256: order.artifactSha256,
-    target_sha256: sha256(Buffer.from(JSON.stringify(target))),
-    output_sha256: sha256(Buffer.from(JSON.stringify(result.output))),
-    target_kind: decision.request.target_schema === undefined ? 'example_inferred' : 'schema',
+    claim: 'This adapted output conforms to the supplied target for this conversion; no claim of factual truth.',
+    input_artifact_sha256: order.artifactSha256,
+    ...(schemaProvided ? { schema_sha256: targetDigest } : { target_example_sha256: targetDigest }),
+    adapted_output_sha256: sha256(Buffer.from(JSON.stringify(result.output))),
+    target_kind: schemaProvided ? 'schema' : 'example_inferred',
+    target_hash_method: 'SHA-256 of UTF-8 Node JSON.stringify(parsed target)',
   };
   const bytes = Buffer.from(JSON.stringify({ order_id: order.orderId, result, receipt }));
+  const resultArtifactSha256 = sha256(bytes);
   const uploaded = await transport.upload(bytes, `${order.orderId}-result.json`);
   if (!/^art_[A-Za-z0-9]{10}$/.test(uploaded?.artifact_id ?? '')) {
     throw new Error('Result upload was not confirmed; reconcile before retrying');
@@ -93,17 +97,18 @@ export async function handleRoomMessage({ message, transport, journal, adapt, pr
   await journal.setStatus(order.orderId, 'reply_pending', { result_artifact_id: uploaded.artifact_id });
   const reply = await transport.reply(order.messageId, JSON.stringify({
     type: 'fieldtrace.delivery.v1', order_id: order.orderId, result_artifact_id: uploaded.artifact_id,
-    receipt,
+    result_artifact_sha256: resultArtifactSha256, receipt,
   }));
   if (!/^msg_[A-Za-z0-9]{10}$/.test(reply?.message_id ?? '')) {
     throw new Error('Delivery reply was not confirmed; reconcile before retrying');
   }
   await journal.setStatus(order.orderId, 'fulfilled', {
     delivery_message_id: reply.message_id,
+    result_artifact_sha256: resultArtifactSha256,
     overpayment_refund_amount: decision.overpayment_refund_amount,
   });
   return { status: 'fulfilled', order_id: order.orderId, result_artifact_id: uploaded.artifact_id,
-    overpayment_refund_amount: decision.overpayment_refund_amount };
+    result_artifact_sha256: resultArtifactSha256, overpayment_refund_amount: decision.overpayment_refund_amount };
 }
 
 /** Records aged payments with no order message; the caller must recheck first. */

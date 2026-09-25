@@ -53,6 +53,22 @@ export function createSharedNetTransport({ roomDir, seatId, timeoutMs = 30000, c
       }
       throw new Error('Ledger search limit reached; cannot safely decide payment status');
     },
+    findRefund: async ({ buyerPrincipalId, sellerPrincipalId, amount, memo }) => {
+      let before;
+      for (let page = 0; page < 20; page++) {
+        const entries = await ledgerPage(before);
+        const found = entries.find((entry) => entry.from === sellerPrincipalId
+          && entry.to === buyerPrincipalId && entry.amount === amount && entry.memo === memo);
+        if (found) return found;
+        if (entries.length < 100) return null;
+        before = entries.at(-1).id;
+      }
+      throw new Error('Ledger refund search limit reached; cannot safely issue another transfer');
+    },
+    payRefund: async ({ buyerPrincipalId, amount, memo }) => {
+      const result = await run('pay', [buyerPrincipalId, String(amount), '--memo', memo, '--room']);
+      return { transfer_id: result.transfer?.id };
+    },
     transfersSince: async (startedAt) => {
       const threshold = Date.parse(startedAt);
       if (!Number.isFinite(threshold)) throw new TypeError('Invalid service start time');

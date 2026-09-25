@@ -3,6 +3,7 @@ import { openJournal } from './journal.js';
 import { runAdapter } from './run-adapter.js';
 import { handleRoomMessage, stageOrphanRefunds } from './service.js';
 import { createSharedNetTransport } from './sharednet-transport.js';
+import { processRefundRecord } from './refund.js';
 
 function parseOptions(args) {
   const options = {};
@@ -19,11 +20,13 @@ function parseOptions(args) {
   if (!Number.isSafeInteger(price) || price < 1) throw new Error('Invalid --price');
   const graceMs = options['orphan-grace-ms'] === undefined ? null : Number(options['orphan-grace-ms']);
   if (graceMs !== null && (!Number.isSafeInteger(graceMs) || graceMs < 1)) throw new Error('Invalid --orphan-grace-ms');
+  if (options['refunds-enabled'] !== undefined && options['refunds-enabled'] !== 'true') throw new Error('--refunds-enabled takes true');
   if (!Number.isFinite(Date.parse(options['started-at']))) throw new Error('Invalid --started-at');
   return {
     roomDir: resolve(options['room-dir']), seatId: options.seat,
     sellerPrincipalId: options.seller, price,
     journalPath: resolve(options.journal), serviceStartedAt: options['started-at'], graceMs,
+    refundsEnabled: options['refunds-enabled'] === 'true',
   };
 }
 
@@ -37,6 +40,7 @@ async function main() {
   process.once('SIGTERM', () => { stopping = true; });
   try {
     let lastOrphanScan = 0;
+    let lastRefundScan = 0;
     while (!stopping) {
       for (const pending of journal.snapshot().pending_messages) {
         const outcome = await handleRoomMessage({ message: pending, transport, journal, adapt: runAdapter,
@@ -64,6 +68,16 @@ async function main() {
           historyComplete: room.historyComplete && ledger.historyComplete });
         if (staged.length) process.stderr.write(`Staged ${staged.length} orphan refund(s) for reconciliation.\n`);
         lastOrphanScan = Date.now();
+      }
+      if (Date.now() - lastRefundScan > 30000) {
+        for (const record of journal.snapshot().records) {
+          const outcome = await processRefundRecord({ record, transport, journal,
+            sellerPrincipalId: options.sellerPrincipalId, refundsEnabled: options.refundsEnabled });
+          if (outcome.status === 'manual_reconciliation') {
+            process.stderr.write(`Refund for ${record.order_id} needs manual ledger reconciliation.\n`);
+          }
+        }
+        lastRefundScan = Date.now();
       }
       if (!stopping) await pause(2000);
     }
