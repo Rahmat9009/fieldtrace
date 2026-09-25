@@ -116,3 +116,45 @@ test('refuses an example whose array items contradict its inferred shape', () =>
   });
   assert.equal(result.code, 'ambiguous_example');
 });
+
+test('repeated orders can reuse a schema $id without poisoning later requests', () => {
+  const target_schema = {
+    $id: 'https://example.test/customer.json', type: 'object',
+    properties: { age: { type: 'number' } }, required: ['age'], additionalProperties: false,
+  };
+  const first = adapt({ payload: { age: '36' }, target_schema });
+  const second = adapt({ payload: { age: '37' }, target_schema });
+  assert.equal(first.status, 'ok');
+  assert.equal(second.status, 'ok');
+  assert.equal(second.output.age, 37);
+});
+
+test('accepts draft-07 and identifies the validator used', () => {
+  const result = adapt({
+    payload: { age: '36' },
+    target_schema: {
+      $schema: 'http://json-schema.org/draft-07/schema#', type: 'object',
+      properties: { age: { type: 'number' } }, required: ['age'], additionalProperties: false,
+    },
+  });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.validation.validator, 'ajv-draft-07');
+});
+
+test('allows display annotations while still refusing unknown constraint typos', () => {
+  assert.equal(adapt({
+    payload: { name: 'Ada' }, target_schema: {
+      type: 'object', properties: { name: { type: 'string', example: 'Ada', 'x-display-label': 'Name', nullable: false } },
+      required: ['name'],
+    },
+  }).status, 'ok');
+  assert.equal(adapt({ payload: { name: 'Ada' }, target_schema: {
+    type: 'object', properties: { name: { type: 'string', minLenght: 8 } },
+  } }).code, 'invalid_schema');
+});
+
+test('numeric examples infer number rather than imposing integer-only input', () => {
+  const result = adapt({ payload: { price: 10.5 }, target_example: { price: 10 } });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.output.price, 10.5);
+});
