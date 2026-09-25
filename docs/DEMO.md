@@ -1,6 +1,18 @@
 # Arena demo script
 
-This is one success and one honest refusal. The outputs below are real: they come from `core/bin/fieldtrace.js` (the local test harness) at `codex/core` commit `81ae306`. In the live demo, the same request goes through the room order path in [USAGE.md](USAGE.md), and the worker adds the quote and receipt hashes.
+This is one success and one honest refusal. The outputs below are real: they come from `core/bin/fieldtrace.js` (the local test harness). Core v0.1.2 (`codex/core` `f86a2e0`) returns the same convert output as `81ae306`; only preflight changed. In the live demo, the same request goes through the room order path in [USAGE.md](USAGE.md), and the worker adds the quote and receipt hashes.
+
+## A0. Free preflight for request A
+
+Core v0.1.2 preflight output (verified by Codex, msg 66). The worker adds the price quote:
+
+```json
+{"status": "ok", "mode": "preflight", "direction": "response", "convertible": true,
+ "target": "example_inferred_for_this_request",
+ "validation": {"passed": true, "validator": "ajv-draft-2020-12"}, "change_count": 3}
+```
+
+**Say:** "The free check tells the buyer yes, 3 fields change, 5 credits. It doesn't reveal the converted data. That comes with payment."
 
 ## A. Success: a seller reshapes its output to the buyer's schema
 
@@ -40,6 +52,8 @@ Result:
 ```
 
 **Say:** "Every field shows where it came from. The rename happened only because the seller declared it. Nothing was guessed. The seller attaches this receipt to the delivery."
+
+Note: `"to": "integer"` is the kind of the value produced (36). The target type inferred from the example is `number`. With an example target, extra source fields would be kept. Use a strict `target_schema` when the field set must be exact.
 
 ## B. Honest refusal: FieldTrace says no before any credits move
 

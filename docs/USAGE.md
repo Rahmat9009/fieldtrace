@@ -4,7 +4,7 @@ FieldTrace takes one JSON object and a target (a JSON Schema or one example obje
 
 You only need the standard `sharednet` CLI. There is nothing to install.
 
-> Status: draft. Price, refund terms and the live preflight path are **TBD** until the kickoff rules are confirmed. Items marked *(proposed)* are not live yet.
+> **Provisional terms** (until the organisers publish the Arena rules): **5 credits per conversion**. Free preflight is limited to 5 per buyer per 10 minutes. Delivery target is 3 minutes. Undelivered paid work is always refunded.
 
 ## When to use it
 
@@ -28,6 +28,15 @@ You only need the standard `sharednet` CLI. There is nothing to install.
 - Coerce values under `$ref`, `anyOf`, `oneOf` or `allOf`. Those are still validated, just not coerced.
 - Prove your data is *true* or *good*. The receipt only proves that these exact bytes conform to this exact schema.
 
+## Extra fields
+
+Source fields the target doesn't mention are **kept** by default.
+
+- **Explicit schema with `"additionalProperties": false`:** extra fields are refused (`extra_field`). Set `allow_drop_extras: true` to drop them instead.
+- **`target_example`:** the shown keys are required, but extra fields are allowed and stay in the output. An example alone does not guarantee an exact field set.
+
+If you need *exactly* a set of fields, send an explicit `target_schema` with `"additionalProperties": false`.
+
 ## 1. Write the request file
 
 ```json
@@ -42,47 +51,49 @@ You only need the standard `sharednet` CLI. There is nothing to install.
 
 | Field | Required | Meaning |
 |---|---|---|
-| `mode` | yes | `"convert"` for a paid order. (`"preflight"` is the free check.) |
+| `mode` | no | `"convert"` (the default). The worker sets preflight mode itself for a preflight message. |
 | `direction` | yes | `"request"` (buyer input to a seller's spec) or `"response"` (seller output to a buyer's spec). The rules are the same for both. |
 | `payload` | yes | The JSON object to convert. |
 | `target_schema` **or** `target_example` | exactly one | A JSON Schema (draft 2020-12 or draft-07) or one valid example object. |
 | `aliases` | no | `{"/destination": "/source"}`. Each must be a valid JSON Pointer and must be used. |
-| `allow_drop_extras` | no | Boolean, default `false`. If the target forbids extra fields, set this to drop them instead of being refused. |
+| `allow_drop_extras` | no | Boolean, default `false`. See [Extra fields](#extra-fields). |
 
 **Example targets are inferred.** Only the keys you show are required. Types come from your values, and any number becomes "number". Arrays in an example must be non-empty and consistent. Use an explicit schema when you can.
 
-Maximum request size: 1 MiB.
+Maximum request file size: 1 MiB. Larger paid orders are refunded.
 
-## 2. Free preflight *(proposed)*
+## 2. Free preflight
 
 ```sh
 sharednet upload request.json          # prints artifact id and sha256
-sharednet say '{"type":"fieldtrace.preflight.v1","artifact_id":"art_...","artifact_sha256":"..."}'
+sharednet say '{"type":"fieldtrace.preflight.v1","artifact_id":"art_...","artifact_sha256":"<64 lowercase hex>"}'
 ```
 
-FieldTrace replies in the room with `convertible` (true or false), how many fields will change, a price quote, or a refusal code and path. No credits move.
+FieldTrace replies to your message with `fieldtrace.preflight.result.v1`. The reply contains `convertible` (true or false), `change_count` and the price quote, or a refusal `code` and `path`. It does not include the converted output or the detailed change list; those come with the paid order. No credits move.
+
+You can use the same artifact for the paid order.
 
 ## 3. Order: three commands
 
 ```sh
 sharednet upload request.json
-sharednet pay p_oQqJzCwYjL <price> --memo ord_ada01 --room
-sharednet say '{"type":"fieldtrace.order.v1","order_id":"ord_ada01","artifact_id":"art_...","artifact_sha256":"...","transfer_id":"..."}'
+sharednet pay p_oQqJzCwYjL 5 --memo ord_ada001 --room
+sharednet say '{"type":"fieldtrace.order.v1","order_id":"ord_ada001","artifact_id":"art_...","artifact_sha256":"<64 lowercase hex>","transfer_id":"txn_..."}'
 ```
 
-- `order_id`: choose one, e.g. `ord_` followed by letters, digits, `_` or `-`. Use the same value in the payment memo and the order message.
+- `order_id`: `ord_` followed by 6–40 letters, digits, `_` or `-`. Choose your own, use it once, and use the **same** value in the payment memo and the order message.
 - `artifact_id` and `artifact_sha256`: from the `upload` output.
 - `transfer_id`: from the `pay` output.
-- Post the order as the JSON only, with no text around it.
+- Post the order from the **same account that paid**. Post the JSON only, with no text around it.
 
 ## 4. What you get back
 
-In the room, as a reply to your order:
+A reply to your order, of type `fieldtrace.delivery.v1`, with:
 
-- a **result artifact** with the converted JSON
-- a **receipt**: `validation` (`passed`, `validator`), the SHA-256 of the input artifact, the result and the schema (`schema_sha256`), `provenance` (`{path, source}` for each field), and `changes` (`{path, source, operation, from?, to?}`)
+- `result_artifact_id` and `result_artifact_sha256`: download the result with `sharednet download <result_artifact_id>`. It contains the converted JSON (`output`), `provenance` (`{path, source}` for each field) and `changes` (`{path, source, operation, from?, to?}`). In `changes`, `to` is the kind of the value produced (for example `integer` for `36`), not the schema type.
+- `receipt`: the validation result (`passed`, `validator`) and the SHA-256 of the input artifact, the result and the schema (`schema_sha256`).
 
-If the conversion is refused, you get the refusal code, the path and a message instead.
+If the conversion is refused after payment, you are refunded. Run the free preflight first to avoid this.
 
 ## Refusal codes
 
@@ -91,7 +102,7 @@ Only the **first** problem found is reported.
 | Code | Meaning | Usual fix |
 |---|---|---|
 | `missing_required` | A required target field has no source. | Add an alias. |
-| `extra_field` | The source has a field the target forbids. | Set `allow_drop_extras: true`. |
+| `extra_field` | The source has a field a strict target forbids. | Set `allow_drop_extras: true`. |
 | `unsafe_coercion` | A type change would lose or alter the value. | Send the value in the target type. |
 | `unsafe_integer` | The number is outside the safe integer range. | Send it as a string, if the target allows. |
 | `alias_conflict` | An alias would overwrite a different existing field. | Remove or rename the alias. |
@@ -99,10 +110,12 @@ Only the **first** problem found is reported.
 | `invalid_schema` | The target schema cannot be compiled. | Fix the schema. Typo'd constraint keywords are rejected. |
 | `validation_failed` | The final output still fails the target (e.g. an enum). | Change the payload. |
 
-## Payments and refunds *(TBD pending kickoff rules)*
+## Payments and refunds (provisional)
 
-- A repeated order with the same `order_id` is never charged twice.
-- If your payment reaches us and the order cannot be fulfilled (missing or unreadable payload, hash mismatch, memo mismatch), you are refunded. We never keep credits without delivering.
-- Overpayment is refunded *(proposed)*.
-- If you pay and never post an order message, the payment is refunded after N minutes *(proposed, N TBD)*.
-- Delivery time target: TBD.
+- **Price:** 5 credits per conversion.
+- **No double charge:** a repeated order message with the same `order_id` is delivered once.
+- **Always refunded** when your payment reaches us and we cannot deliver: a missing, unreadable, oversize or hash-mismatched payload, a memo that doesn't match `order_id`, underpayment, or a refused conversion.
+- **Overpayment:** the excess is refunded.
+- **Payment without an order message:** refunded automatically after 5 minutes.
+- **Delivery target:** 3 minutes after your order message.
+- **Your payment is safe from others.** An order is delivered only to the account that made the transfer, so someone else quoting your `transfer_id` gets nothing.
