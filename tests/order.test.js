@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { encodeOrderMessage, placeOrder } from '../client/order.js';
-import { assessOrder, parseOrderMessage } from '../worker/intake.js';
+import { encodeOrderMessage, encodePreflightMessage, placeOrder } from '../client/order.js';
+import { assessOrder, assessPreflight, findOrphanPayments, parseOrderMessage, parsePreflightMessage } from '../worker/intake.js';
 
 const orderId = 'ord_12345678-1234-4234-8234-123456789abc';
 const artifactId = 'art_AbCdEfGhIj';
@@ -20,14 +20,36 @@ const order = parseOrderMessage(message);
 const transfer = { id: transferId, from: buyer, to: seller, amount: 8, memo: orderId, room_id: room };
 const context = { sellerPrincipalId: seller, roomId: room, price: 8 };
 
-test('correlates the exact sender, recipient, room, price, memo and transfer', () => {
+test('correlates the exact sender, recipient, price, memo and transfer', () => {
   assert.equal(assessOrder({ order, transfer, artifact: { status: 'found', bytes }, ...context }).status, 'ready');
   for (const [field, value] of [
-    ['from', seller], ['to', buyer], ['room_id', 'rom_OtherRoom'],
-    ['memo', 'ord_wrong'], ['amount', 7], ['id', 'txn_Other1234'],
+    ['from', seller], ['to', buyer], ['id', 'txn_Other1234'],
   ]) {
     assert.equal(assessOrder({ order, transfer: { ...transfer, [field]: value }, artifact: { status: 'found', bytes }, ...context }).code, 'payment_mismatch');
   }
+});
+
+test('plain SharedNet orders accept a short hand-written ID and an unassociated payment', () => {
+  const handOrderId = 'ord_manual01';
+  const handOrder = parseOrderMessage({ ...message, content: encodeOrderMessage({ orderId: handOrderId, artifactId, transferId, artifactSha256: hash }) });
+  const decision = assessOrder({ order: handOrder, transfer: { ...transfer, memo: handOrderId, room_id: null }, artifact: { status: 'found', bytes }, ...context });
+  assert.equal(decision.status, 'ready');
+  assert.equal(decision.overpayment_refund_amount, 0);
+});
+
+test('verified underpayment or wrong memo requires a full refund; overpayment is delivered and excess refunded', () => {
+  for (const [change, expectedCode] of [
+    [{ amount: 7 }, 'underpaid'],
+    [{ memo: 'ord_other123' }, 'memo_mismatch'],
+  ]) {
+    const decision = assessOrder({ order, transfer: { ...transfer, ...change }, artifact: { status: 'found', bytes }, ...context });
+    assert.equal(decision.status, 'refund_required');
+    assert.equal(decision.code, expectedCode);
+    assert.equal(decision.refund_amount, change.amount ?? transfer.amount);
+  }
+  const overpaid = assessOrder({ order, transfer: { ...transfer, amount: 10, room_id: null }, artifact: { status: 'found', bytes }, ...context });
+  assert.equal(overpaid.status, 'ready');
+  assert.equal(overpaid.overpayment_refund_amount, 2);
 });
 
 test('a transfer cannot fulfill a second order and exact retries are idempotent', () => {
@@ -37,10 +59,48 @@ test('a transfer cannot fulfill a second order and exact retries are idempotent'
 });
 
 test('missing or altered payload takes a refund path only after payment verification', () => {
-  assert.equal(assessOrder({ order, transfer, artifact: { status: 'missing' }, ...context }).status, 'refund_required');
+  const missing = assessOrder({ order, transfer, artifact: { status: 'missing' }, ...context });
+  assert.equal(missing.status, 'refund_required');
+  assert.equal(missing.refund_amount, 8);
   assert.equal(assessOrder({ order, transfer, artifact: { status: 'temporary_error' }, ...context }).status, 'retry_later');
   assert.equal(assessOrder({ order, transfer, artifact: { status: 'found', bytes: Buffer.from('changed') }, ...context }).code, 'artifact_hash_mismatch');
   assert.equal(assessOrder({ order, transfer: { ...transfer, to: buyer }, artifact: { status: 'missing' }, ...context }).status, 'rejected');
+});
+
+test('missing request mode defaults to convert without triggering a refund', () => {
+  const noModeBytes = Buffer.from(JSON.stringify({ direction: 'request', payload: { x: 1 }, target_example: { x: 1 } }));
+  const noModeOrder = { ...order, artifactSha256: createHash('sha256').update(noModeBytes).digest('hex') };
+  const decision = assessOrder({ order: noModeOrder, transfer, artifact: { status: 'found', bytes: noModeBytes }, ...context });
+  assert.equal(decision.status, 'ready');
+  assert.equal(decision.request.mode, 'convert');
+});
+
+test('free preflight returns only convertibility, count and quote', async () => {
+  const preflight = parsePreflightMessage({ ...message, content: encodePreflightMessage({ artifactId, artifactSha256: hash }) });
+  const result = await assessPreflight({ preflight, artifact: { status: 'found', bytes }, price: 8,
+    adapt: () => ({ status: 'ok', convertible: true, changes: [{ path: '/x' }], output: { secret: true } }),
+  });
+  assert.deepEqual(result, { status: 'ok', convertible: true, change_count: 1, price: 8 });
+  assert.equal('output' in result, false);
+  const newer = await assessPreflight({ preflight, artifact: { status: 'found', bytes }, price: 8,
+    adapt: () => ({ status: 'ok', convertible: true, change_count: 3 }),
+  });
+  assert.equal(newer.change_count, 3);
+});
+
+test('orphan scan only proposes refunds after a complete, aged ledger and room scan', () => {
+  const orphan = { ...transfer, created_at: '2026-09-25T12:00:00Z' };
+  const scan = (overrides = {}) => findOrphanPayments({
+    transfers: [orphan], seenOrderIds: [], sellerPrincipalId: seller,
+    serviceStartedAt: '2026-09-25T11:00:00Z', now: '2026-09-25T12:10:00Z',
+    graceMs: 5 * 60 * 1000, historyComplete: true, ...overrides,
+  });
+  assert.equal(scan().length, 1);
+  assert.equal(scan()[0].refund_amount, 8);
+  assert.deepEqual(scan({ historyComplete: false }), []);
+  assert.deepEqual(scan({ seenOrderIds: [orderId] }), []);
+  assert.deepEqual(scan({ prior: [{ transfer_id: transferId }] }), []);
+  assert.deepEqual(scan({ now: '2026-09-25T12:01:00Z' }), []);
 });
 
 test('buyer never pays after failed remote preflight', async () => {

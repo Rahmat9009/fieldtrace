@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 export const ORDER_TYPE = 'fieldtrace.order.v1';
-export const ORDER_ID_PATTERN = /^ord_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const PREFLIGHT_TYPE = 'fieldtrace.preflight.v1';
+export const ORDER_ID_PATTERN = /^ord_[A-Za-z0-9_-]{6,40}$/;
 export const ARTIFACT_ID_PATTERN = /^art_[A-Za-z0-9]{10}$/;
 export const TRANSFER_ID_PATTERN = /^txn_[A-Za-z0-9]{10}$/;
 
@@ -26,6 +27,12 @@ export function encodeOrderMessage({ orderId, artifactId, transferId, artifactSh
     artifact_sha256: artifactSha256,
     transfer_id: transferId,
   });
+}
+
+export function encodePreflightMessage({ artifactId, artifactSha256 }) {
+  if (!ARTIFACT_ID_PATTERN.test(artifactId)) throw new TypeError('Invalid artifact_id');
+  if (!/^[a-f0-9]{64}$/.test(artifactSha256)) throw new TypeError('Invalid artifact_sha256');
+  return JSON.stringify({ type: PREFLIGHT_TYPE, artifact_id: artifactId, artifact_sha256: artifactSha256 });
 }
 
 /**

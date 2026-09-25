@@ -1,43 +1,89 @@
 import { createHash } from 'node:crypto';
 import {
-  ARTIFACT_ID_PATTERN, ORDER_ID_PATTERN, ORDER_TYPE, TRANSFER_ID_PATTERN,
+  ARTIFACT_ID_PATTERN, ORDER_ID_PATTERN, ORDER_TYPE, PREFLIGHT_TYPE, TRANSFER_ID_PATTERN,
 } from '../client/order.js';
+
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+
+function parseEnvelope(message, type) {
+  if (typeof message?.content !== 'string') return null;
+  let envelope;
+  try { envelope = JSON.parse(message.content); } catch { return null; }
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope) || envelope.type !== type) return null;
+  if (!/^p_[A-Za-z0-9]{10}$/.test(message.sender_principal_id ?? '')) {
+    throw new TypeError('FieldTrace message has no valid sender principal');
+  }
+  if (!ARTIFACT_ID_PATTERN.test(envelope.artifact_id) || !SHA256_PATTERN.test(envelope.artifact_sha256)) {
+    throw new TypeError('Malformed FieldTrace artifact reference');
+  }
+  return { envelope, buyerPrincipalId: message.sender_principal_id, messageId: message.id };
+}
 
 /** Returns null for unrelated room messages; rejects malformed order envelopes. */
 export function parseOrderMessage(message) {
-  if (typeof message?.content !== 'string') return null;
-  let order;
-  try { order = JSON.parse(message.content); } catch { return null; }
-  if (!order || typeof order !== 'object' || Array.isArray(order) || order.type !== ORDER_TYPE) return null;
-  if (!ORDER_ID_PATTERN.test(order.order_id)
-    || !ARTIFACT_ID_PATTERN.test(order.artifact_id)
-    || !TRANSFER_ID_PATTERN.test(order.transfer_id)
-    || !/^[a-f0-9]{64}$/.test(order.artifact_sha256)) {
+  const parsed = parseEnvelope(message, ORDER_TYPE);
+  if (!parsed) return null;
+  const order = parsed.envelope;
+  if (!ORDER_ID_PATTERN.test(order.order_id) || !TRANSFER_ID_PATTERN.test(order.transfer_id)) {
     throw new TypeError('Malformed FieldTrace order');
-  }
-  if (!/^p_[A-Za-z0-9]{10}$/.test(message.sender_principal_id ?? '')) {
-    throw new TypeError('Order message has no valid sender principal');
   }
   return {
     orderId: order.order_id,
     artifactId: order.artifact_id,
     artifactSha256: order.artifact_sha256,
     transferId: order.transfer_id,
-    buyerPrincipalId: message.sender_principal_id,
-    messageId: message.id,
+    buyerPrincipalId: parsed.buyerPrincipalId,
+    messageId: parsed.messageId,
+  };
+}
+
+export function parsePreflightMessage(message) {
+  const parsed = parseEnvelope(message, PREFLIGHT_TYPE);
+  if (!parsed) return null;
+  return {
+    artifactId: parsed.envelope.artifact_id,
+    artifactSha256: parsed.envelope.artifact_sha256,
+    buyerPrincipalId: parsed.buyerPrincipalId,
+    messageId: parsed.messageId,
   };
 }
 
 /** Ledger records are normalized to {id, from, to, amount, memo, room_id}. */
-export function verifyTransfer(order, transfer, { sellerPrincipalId, roomId, price }) {
-  if (!transfer) return { ok: false, code: 'transfer_not_found' };
-  const matches = transfer.id === order.transferId
-    && transfer.from === order.buyerPrincipalId
-    && transfer.to === sellerPrincipalId
-    && transfer.room_id === roomId
-    && transfer.memo === order.orderId
-    && transfer.amount === price;
-  return matches ? { ok: true } : { ok: false, code: 'payment_mismatch' };
+export function verifyTransfer(order, transfer, { sellerPrincipalId, price }) {
+  if (!transfer) return { ok: false, code: 'transfer_not_found', retryable: true };
+  if (transfer.id !== order.transferId || transfer.from !== order.buyerPrincipalId || transfer.to !== sellerPrincipalId) {
+    return { ok: false, code: 'payment_mismatch' };
+  }
+  if (!Number.isSafeInteger(transfer.amount) || transfer.amount < 1) {
+    return { ok: false, code: 'invalid_ledger_amount', retryable: true };
+  }
+  if (transfer.memo !== order.orderId) {
+    return { ok: false, code: 'memo_mismatch', refundable: true, refundAmount: transfer.amount };
+  }
+  if (transfer.amount < price) {
+    return { ok: false, code: 'underpaid', refundable: true, refundAmount: transfer.amount };
+  }
+  // Room association is optional on `sharednet pay`; it is not an identity check.
+  return { ok: true, overpayment: transfer.amount - price };
+}
+
+function inspectArtifact(artifact, expectedSha256) {
+  if (!artifact || artifact.status === 'temporary_error') return { status: 'retry_later', code: 'artifact_unavailable' };
+  if (artifact.status === 'missing') return { status: 'invalid', code: 'artifact_missing' };
+  if (artifact.status !== 'found' || !Buffer.isBuffer(artifact.bytes)) {
+    return { status: 'retry_later', code: 'artifact_unavailable' };
+  }
+  if (artifact.bytes.length > 1024 * 1024) return { status: 'invalid', code: 'artifact_too_large' };
+  const digest = createHash('sha256').update(artifact.bytes).digest('hex');
+  if (digest !== expectedSha256) return { status: 'invalid', code: 'artifact_hash_mismatch' };
+  let request;
+  try { request = JSON.parse(artifact.bytes.toString('utf8')); } catch {
+    return { status: 'invalid', code: 'invalid_payload_json' };
+  }
+  if (!request || typeof request !== 'object' || Array.isArray(request)) {
+    return { status: 'invalid', code: 'invalid_conversion_request' };
+  }
+  return { status: 'found', request };
 }
 
 /**
@@ -46,7 +92,7 @@ export function verifyTransfer(order, transfer, { sellerPrincipalId, roomId, pri
  * `artifact` is {status:'found', bytes}, {status:'missing'}, or
  * {status:'temporary_error'}; only a confirmed missing payload can be refunded.
  */
-export function assessOrder({ order, transfer, artifact, prior = [], sellerPrincipalId, roomId, price }) {
+export function assessOrder({ order, transfer, artifact, prior = [], sellerPrincipalId, price }) {
   const sameOrder = prior.find((record) => record.order_id === order.orderId);
   const sameTransfer = prior.find((record) => record.transfer_id === order.transferId);
   if (sameOrder || sameTransfer) {
@@ -56,27 +102,61 @@ export function assessOrder({ order, transfer, artifact, prior = [], sellerPrinc
     return { status: 'rejected', code: 'order_or_transfer_reused' };
   }
 
-  const payment = verifyTransfer(order, transfer, { sellerPrincipalId, roomId, price });
-  if (!payment.ok) return { status: 'rejected', code: payment.code };
-  if (artifact?.status === 'temporary_error' || !artifact) {
-    return { status: 'retry_later', code: 'artifact_unavailable' };
+  const payment = verifyTransfer(order, transfer, { sellerPrincipalId, price });
+  if (!payment.ok) {
+    if (payment.refundable) return {
+      status: 'refund_required', code: payment.code, transfer_id: order.transferId,
+      buyer_principal_id: order.buyerPrincipalId, refund_amount: payment.refundAmount,
+    };
+    return { status: payment.retryable ? 'retry_later' : 'rejected', code: payment.code };
   }
-  if (artifact.status === 'missing') {
-    return { status: 'refund_required', code: 'artifact_missing', transfer_id: order.transferId, buyer_principal_id: order.buyerPrincipalId };
+  const payload = inspectArtifact(artifact, order.artifactSha256);
+  if (payload.status === 'retry_later') return payload;
+  if (payload.status === 'invalid') return {
+    status: 'refund_required', code: payload.code, transfer_id: order.transferId,
+    buyer_principal_id: order.buyerPrincipalId, refund_amount: transfer.amount,
+  };
+  const request = { mode: 'convert', ...payload.request };
+  if (request.mode !== 'convert') return {
+    status: 'refund_required', code: 'invalid_conversion_request', transfer_id: order.transferId,
+    buyer_principal_id: order.buyerPrincipalId, refund_amount: transfer.amount,
+  };
+  return { status: 'ready', order, request, overpayment_refund_amount: payment.overpayment };
+}
+
+/** A free, server-side preflight. Detailed changes and output stay private. */
+export async function assessPreflight({ preflight, artifact, adapt, price }) {
+  const payload = inspectArtifact(artifact, preflight.artifactSha256);
+  if (payload.status !== 'found') return { status: payload.status, code: payload.code };
+  const result = await adapt({ ...payload.request, mode: 'preflight' });
+  if (result?.status === 'ok' && result.convertible === true) {
+    return { status: 'ok', convertible: true,
+      change_count: result.change_count ?? result.changes?.length ?? 0, price };
   }
-  if (artifact.status !== 'found' || !Buffer.isBuffer(artifact.bytes)) {
-    return { status: 'retry_later', code: 'artifact_unavailable' };
-  }
-  const digest = createHash('sha256').update(artifact.bytes).digest('hex');
-  if (digest !== order.artifactSha256) {
-    return { status: 'refund_required', code: 'artifact_hash_mismatch', transfer_id: order.transferId, buyer_principal_id: order.buyerPrincipalId };
-  }
-  let request;
-  try { request = JSON.parse(artifact.bytes.toString('utf8')); } catch {
-    return { status: 'refund_required', code: 'invalid_payload_json', transfer_id: order.transferId, buyer_principal_id: order.buyerPrincipalId };
-  }
-  if (!request || typeof request !== 'object' || Array.isArray(request) || request.mode !== 'convert') {
-    return { status: 'refund_required', code: 'invalid_conversion_request', transfer_id: order.transferId, buyer_principal_id: order.buyerPrincipalId };
-  }
-  return { status: 'ready', order, request };
+  return { status: 'unsupported', convertible: false, code: result?.code ?? 'invalid_request', path: result?.path ?? '' };
+}
+
+/**
+ * Reconciliation candidate scan. The caller must supply a complete order
+ * message window and a durable journal, then recheck both before refunding.
+ */
+export function findOrphanPayments({ transfers, seenOrderIds, prior = [], sellerPrincipalId, serviceStartedAt, now, graceMs, historyComplete }) {
+  if (!historyComplete || !Number.isSafeInteger(graceMs) || graceMs < 1) return [];
+  const start = Date.parse(serviceStartedAt);
+  const current = Date.parse(now);
+  if (!Number.isFinite(start) || !Number.isFinite(current)) return [];
+  const seen = new Set(seenOrderIds);
+  const recorded = new Set(prior.map((record) => record.transfer_id));
+  return transfers.filter((transfer) => {
+    const created = Date.parse(transfer.created_at);
+    return transfer.to === sellerPrincipalId
+      && /^p_[A-Za-z0-9]{10}$/.test(transfer.from ?? '')
+      && ORDER_ID_PATTERN.test(transfer.memo ?? '')
+      && Number.isSafeInteger(transfer.amount) && transfer.amount > 0
+      && Number.isFinite(created) && created >= start && current - created >= graceMs
+      && !seen.has(transfer.memo) && !recorded.has(transfer.id);
+  }).map((transfer) => ({
+    status: 'refund_required', code: 'order_message_missing', order_id: transfer.memo,
+    transfer_id: transfer.id, buyer_principal_id: transfer.from, refund_amount: transfer.amount,
+  }));
 }
