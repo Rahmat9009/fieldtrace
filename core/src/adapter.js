@@ -213,10 +213,10 @@ export function adapt(request) {
     const common = {
       status: 'ok', mode, direction, convertible: true,
       target: inferred ? 'example_inferred_for_this_request' : 'provided_schema',
-      changes: context.trace, validation: { passed: true, validator: dialect },
+      validation: { passed: true, validator: dialect },
     };
-    if (mode === 'preflight') return common;
-    return { ...common, output, provenance: context.fields };
+    if (mode === 'preflight') return { ...common, change_count: context.trace.length };
+    return { ...common, changes: context.trace, output, provenance: context.fields };
   } catch (error) {
     return {
       status: 'unsupported', mode, direction, convertible: false,
