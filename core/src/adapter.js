@@ -1,8 +1,7 @@
+import Ajv from 'ajv';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
-const ajv = new Ajv2020({ allErrors: true, strict: true, coerceTypes: false, removeAdditional: false });
-addFormats(ajv);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const escape = (key) => String(key).replaceAll('~', '~0').replaceAll('/', '~1');
 const pointer = (base, key) => `${base}/${escape(key)}`;
@@ -45,7 +44,35 @@ function fromExample(example) {
       additionalProperties: true,
     };
   }
-  return { type: Number.isInteger(example) ? 'integer' : typeof example };
+  return { type: typeof example === 'number' ? 'number' : typeof example };
+}
+
+function makeValidator(schema) {
+  const draft = schema && typeof schema === 'object' && !Array.isArray(schema) ? schema.$schema : undefined;
+  const draft07 = draft === 'http://json-schema.org/draft-07/schema#' ||
+    draft === 'https://json-schema.org/draft-07/schema' ||
+    draft === 'http://json-schema.org/draft-07/schema';
+  if (draft !== undefined && !draft07 &&
+      draft !== 'https://json-schema.org/draft/2020-12/schema' &&
+      draft !== 'https://json-schema.org/draft/2020-12/schema#') {
+    throw new CannotConvert('unsupported_target', `Unsupported JSON Schema dialect: ${draft}`);
+  }
+  // A fresh instance prevents duplicate $id collisions across separate orders.
+  const ajv = draft07 ? new Ajv({ allErrors: true, strict: true, coerceTypes: false, removeAdditional: false }) :
+    new Ajv2020({ allErrors: true, strict: true, coerceTypes: false, removeAdditional: false });
+  addFormats(ajv);
+  ajv.addKeyword('example'); // OpenAPI display metadata, never a validity check.
+  const seen = new Set();
+  function registerAnnotations(node) {
+    if (!node || typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+    for (const [key, value] of Object.entries(node)) {
+      if (key.startsWith('x-') && !ajv.getKeyword(key)) ajv.addKeyword(key);
+      registerAnnotations(value);
+    }
+  }
+  registerAnnotations(schema);
+  return { validate: ajv.compile(schema), dialect: draft07 ? 'ajv-draft-07' : 'ajv-draft-2020-12' };
 }
 
 function typeOf(value) {
@@ -170,7 +197,7 @@ export function adapt(request) {
   try {
     const inferred = target_schema === undefined;
     const schema = inferred ? fromExample(target_example) : target_schema;
-    const validate = ajv.compile(schema);
+    const { validate, dialect } = makeValidator(schema);
     if (inferred && !validate(target_example)) {
       throw new CannotConvert('ambiguous_example', 'The target example has inconsistent value types or array items');
     }
@@ -186,10 +213,10 @@ export function adapt(request) {
     const common = {
       status: 'ok', mode, direction, convertible: true,
       target: inferred ? 'example_inferred_for_this_request' : 'provided_schema',
-      changes: context.trace, validation: { passed: true, validator: 'ajv-draft-2020-12' },
+      validation: { passed: true, validator: dialect },
     };
-    if (mode === 'preflight') return common;
-    return { ...common, output, provenance: context.fields };
+    if (mode === 'preflight') return { ...common, change_count: context.trace.length };
+    return { ...common, changes: context.trace, output, provenance: context.fields };
   } catch (error) {
     return {
       status: 'unsupported', mode, direction, convertible: false,
