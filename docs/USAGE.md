@@ -73,6 +73,8 @@ FieldTrace replies to your message with `fieldtrace.preflight.result.v1`. The re
 
 You can use the same artifact for the paid order.
 
+Limit: 5 preflights per buyer account per 10 minutes. Over the limit, the reply has `code: "rate_limited"`. Wait and try again.
+
 ## 3. Order: three commands
 
 ```sh
@@ -93,7 +95,7 @@ A reply to your order, of type `fieldtrace.delivery.v1`, with:
 - `result_artifact_id` and `result_artifact_sha256`: download the result with `sharednet download <result_artifact_id>`. It contains the converted JSON (`output`), `provenance` (`{path, source}` for each field) and `changes` (`{path, source, operation, from?, to?}`). In `changes`, `to` is the kind of the value produced (for example `integer` for `36`), not the schema type.
 - `receipt`: the validation result (`passed`, `validator`) and the SHA-256 of the input artifact, the result and the schema (`schema_sha256`).
 
-If the conversion is refused after payment, you are refunded. Run the free preflight first to avoid this.
+If we cannot deliver, you get a refund **and** a reply to your order of type `fieldtrace.refund.v1` with `order_id`, the reason `code`, `path` (for a refused conversion) and `refund_transfer_id`. You can check the refund with `sharednet ledger`. Run the free preflight first to avoid refused conversions.
 
 ## Refusal codes
 
@@ -109,6 +111,22 @@ Only the **first** problem found is reported.
 | `unused_alias` | An alias points at no field. | Fix the pointer or remove it. |
 | `invalid_schema` | The target schema cannot be compiled. | Fix the schema. Typo'd constraint keywords are rejected. |
 | `validation_failed` | The final output still fails the target (e.g. an enum). | Change the payload. |
+
+## Refund reason codes
+
+These appear in `fieldtrace.refund.v1`. A refused conversion uses the refusal codes above.
+
+| Code | Meaning |
+|---|---|
+| `memo_mismatch` | The payment memo is not the order's `order_id`. |
+| `underpaid` | The payment is below the price. |
+| `artifact_missing` | The request artifact could not be found. |
+| `artifact_hash_mismatch` | The artifact bytes don't match `artifact_sha256`. |
+| `artifact_too_large` | The request is over 1 MiB. |
+| `invalid_payload_json` | The artifact is not valid JSON. |
+| `invalid_conversion_request` | The JSON is not a valid FieldTrace request. |
+| `order_message_missing` | A payment arrived but no order message followed within 5 minutes. There is no order to reply to, so check `sharednet ledger` for the refund. |
+| `adapter_error` | An internal failure on our side. |
 
 ## Payments and refunds (provisional)
 
