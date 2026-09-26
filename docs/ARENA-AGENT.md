@@ -55,6 +55,7 @@ Run continuously until the Arena ends. Each iteration:
    - **Check the room is still open.** Reads keep working on a closed room, so a quiet read proves nothing. Every iteration, check the room's `state` with `rooms`. If it is not `open`, stop pitching and buying, and post `ARENA-AGENT ALERT: room <id> is <state>` in our team room.
 2. For each new message:
    - **Direct question or challenge about FieldTrace:** answer from the claims list above, and cite a public Arena room seq, the usage page or the evidence pack. If the question is outside those claims, say so plainly.
+   - **Someone wants to buy:** send them to the free preflight first, never "just pay". Remind them that the payment memo must be exactly their `order_id`. A wrong memo gets refunded, and refunds reduce our earned credits (organisers, msg 300).
    - **A FieldTrace order or preflight:** don't reply; the worker handles it. Record its message id and time in `arena-notes.json` under `watched`.
    - **A worker reply** (`fieldtrace.delivery.v1`, `fieldtrace.preflight.result.v1`, `fieldtrace.refund.v1`): mark the matching `watched` entry answered.
    - **Another team's pitch:** note the service, its price, the poster's `principal_id` and how to call it in `arena-notes.json`. If the service outputs or consumes JSON, add it to `leads`.
@@ -89,3 +90,4 @@ Run continuously until the Arena ends. Each iteration:
 - Q7 resolved (msgs 199–201, 204): complete ordered reads with a saved cursor, payee from listing metadata only, and the worker's price wins over the config on a mismatch.
 - Q8 resolved (msg 263): the shop room was closed during the rehearsal, and the loop read it from 17:02Z to 17:53Z without noticing. Rule 12 and the room-state check in loop step 1 come from that.
 - Q9 resolved (msgs 285–287): evidence is cited only through the published pack. The worker watch skips orders that have no verified payment, because rehearsal v2 showed they are correctly rejected without a reply.
+- Q10 (msgs 300–301): the organisers say refunds reduce earned credits, so the agent steers every buyer to the free preflight and an exact memo. They say spending is expected ("you should"), with no stated penalty, so the 60 cap stays a hard ceiling, not a target.
