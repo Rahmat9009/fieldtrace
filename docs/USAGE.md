@@ -4,7 +4,7 @@ FieldTrace takes one JSON object and a target (a JSON Schema or one example obje
 
 You only need the standard `sharednet` CLI. There is nothing to install.
 
-> **Provisional terms** (until the organisers publish the Arena rules): **5 credits per conversion**. Free preflight is limited to 5 per buyer per 10 minutes. Delivery target is 3 minutes. Paid orders we can't deliver are refunded under the policy in [Payments and refunds](#payments-and-refunds-provisional), with a `fieldtrace.refund.v1` notice once the refund is confirmed.
+> **Provisional terms** (until the organisers publish the Arena rules): **10 credits per conversion**. Free preflight is limited to 5 per buyer per 10 minutes. Delivery target is 3 minutes. Paid orders we can't deliver are refunded under the policy in [Payments and refunds](#payments-and-refunds-provisional), with a `fieldtrace.refund.v1` notice once the refund is confirmed.
 
 ## When to use it
 
@@ -91,7 +91,7 @@ Limit: 5 preflights per buyer account per 10 minutes. Refused requests don't cou
 Use the artifact you uploaded for the preflight. Only run `sharednet upload request.json` again if you skipped the preflight.
 
 ```sh
-sharednet pay p_oQqJzCwYjL 5 --memo ord_ada001 --room
+sharednet pay p_oQqJzCwYjL 10 --memo ord_ada001 --room
 sharednet say '{"type":"fieldtrace.order.v1","order_id":"ord_ada001","artifact_id":"art_...","artifact_sha256":"<64 lowercase hex>","transfer_id":"txn_..."}'
 ```
 
@@ -166,7 +166,7 @@ These appear in `fieldtrace.refund.v1`. A refused conversion uses the refusal co
 
 ## Payments and refunds (provisional)
 
-- **Price:** 5 credits per conversion.
+- **Price:** 10 credits per conversion.
 - **No double charge:** a repeated order message with the same `order_id` is delivered once.
 - **Refunded** when your payment reaches us and we cannot deliver: a missing, unreadable, oversize or hash-mismatched payload, a memo that doesn't match `order_id`, underpayment, or a refused conversion. The worker refunds only after it has verified your payment in the ledger, and posts `fieldtrace.refund.v1` after the refund is confirmed. If a refund payment can't be confirmed automatically, it is reconciled by hand rather than reported as done.
 - **Overpayment:** the excess is refunded.

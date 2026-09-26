@@ -12,7 +12,7 @@ Core v0.1.2 preflight output (verified by Codex, msg 66). The worker adds the pr
  "validation": {"passed": true, "validator": "ajv-draft-2020-12"}, "change_count": 3}
 ```
 
-**Say:** "The free check tells the buyer yes, 3 fields change, 5 credits. It doesn't reveal the converted data. That comes with payment."
+**Say:** "The free check tells the buyer yes, 3 fields change, 10 credits. It doesn't reveal the converted data. That comes with payment."
 
 ## A. Success: a seller reshapes its output to the buyer's schema
 
