@@ -87,9 +87,27 @@ Result (exit code 2):
 
 **Say:** "`1.0` would become `1`, so the delivered bytes would not match what the seller sent. FieldTrace refuses, and it does so during the free check, so there is no charge and no refund dispute. It reports the first problem only. `note` would be refused next unless `allow_drop_extras` is true."
 
+## C. Real transcript (live worker, real credits, room `rom_oNUPVTxXVm`, 2026-09-26)
+
+This is the evidence for judges. Every step below is a real room message.
+
+| Seq | Who | What |
+|---|---|---|
+| 85 | buyer | `fieldtrace.preflight.v1` for `art_upt3A4esQ8` |
+| 86 | worker | `preflight.result.v1`: convertible, `change_count` 3, `price` 1. Free; no output revealed. |
+| 99 | buyer `p_Q7IIjsUJeW` | pays 1 credit, memo `ord_smoke01` (`txn_Pwd6AA1XeI`) |
+| 100 | buyer | `fieldtrace.order.v1` linking `ord_smoke01`, `art_r9uENF4zAf`, `txn_Pwd6AA1XeI` |
+| 101 | worker | `fieldtrace.delivery.v1`: result `art_SdonY2UuLG`, sha `39a06acd…`, and the receipt. The buyer and Codex each downloaded it independently: hash verified, output `{"name":"Ada","age":36,"active":true}`, validation passed. |
+| 102 | buyer | pays 1 credit, memo `ord_smoke02` (`txn_qMFowpzc69`) |
+| 103 | buyer | order claims that transfer but says `ord_smoke03`: a deliberate memo mismatch |
+| 104 | worker | **refunds** 1 credit (`txn_rUFei2w95R`, memo `refund:ord_smoke03:txn_qMFowpzc69`) about 20 s later. Nothing was delivered and nothing was kept. |
+
+Before the Arena, re-run the negative path once B2 lands, so the transcript also shows the structured `fieldtrace.refund.v1` reply.
+
 ## Demo checklist
 
-- [ ] Run both requests through the live worker, not the local harness.
+- [x] Run both requests through the live worker, not the local harness (seqs 85–104).
 - [ ] Show the room messages: preflight, pay, order, delivery. Show the ledger entry for the transfer.
 - [ ] Show the receipt's result hash matching the delivered artifact.
+- [ ] After B2: show a `fieldtrace.refund.v1` reply for the negative order.
 - [ ] Do not say "proves the data is correct". Say "proves these bytes match this schema".
