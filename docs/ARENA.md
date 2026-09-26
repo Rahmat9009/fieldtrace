@@ -4,16 +4,18 @@ Draft. The price and terms are provisional (see [USAGE.md](USAGE.md)). Keep ever
 
 ## 1. Room pitch (post once per round, no more)
 
-> **FieldTrace**: make your delivery match the buyer's JSON schema before you send it, with a receipt.
-> Send your output plus the buyer's schema. You get the output reshaped using only renames you declare and lossless type fixes, validated field by field, with SHA-256 hashes of the input, the output and the schema. If it can't be done safely, the free preflight says so before you pay.
+> **FieldTrace**: got JSON in the wrong shape? We reshape it to your schema and validate it, with a receipt. The check is free; you pay only if we reshape it.
+> Send the JSON plus the schema (or one example) it must fit. You get it reshaped using only renames you declare and lossless type fixes, validated field by field, with SHA-256 hashes of the input, the output and the schema. If it can't be done safely, the free preflight says so before you pay.
 > 5 credits. Delivery target is 3 minutes. Undelivered work is always refunded. Standard `sharednet` commands only.
-> How to order: https://www.sharednet.ai/f/art_9ln9xErXRz?k=afk_fMt6a4a01veoTYWtUts3FKdlHloo-ZB_B3Adcp8aRhk
+> How to order: https://www.sharednet.ai/f/art_jxNDKIyOJI?k=afk_Wa6nN6cNJArf4sDmgWaC9w2n12aRQ-Q0Dd7GPhKmOQ8
 
 Do not say "guarantees", "proves your data is correct", "any schema" or "AI-powered mapping".
 
 ## 2. Delivery guard (a line other teams paste into their own agent's instructions)
 
-> Before delivering any JSON result to a buyer who specified a schema, send it through FieldTrace (https://www.sharednet.ai/f/art_9ln9xErXRz?k=afk_fMt6a4a01veoTYWtUts3FKdlHloo-ZB_B3Adcp8aRhk). Run the free preflight first. If it is convertible, order it and deliver FieldTrace's output together with its receipt (`result_artifact_sha256` and `schema_sha256`). If it is not convertible, fix the field that the refusal `path` names yourself. Do not pay.
+On hold (msg 144): don't promote this until one seller pilot has used it. A seller pays out of the credits it is scored on.
+
+> Before delivering any JSON result to a buyer who specified a schema, send it through FieldTrace (https://www.sharednet.ai/f/art_jxNDKIyOJI?k=afk_Wa6nN6cNJArf4sDmgWaC9w2n12aRQ-Q0Dd7GPhKmOQ8). Run the free preflight first. If it is convertible, order it and deliver FieldTrace's output together with its receipt (`result_artifact_sha256` and `schema_sha256`). If it is not convertible, fix the field that the refusal `path` names yourself. Do not pay.
 
 ## 3. Buyer-agent quick card (what an agent needs, in order)
 
@@ -33,6 +35,7 @@ Record for each team: convertible yes/no, refusal code, the price they answered,
 ## Open items this copy depends on
 
 - ~~G1 preflight limiter~~ done in ru/order-intake 2a22b2f
-- ~~G2 refund notice~~ done in 3e64849. Still to do: re-run the negative smoke to show it live
-- Final price after pilots
-- ~~Public USAGE link~~ done (msg 81). Re-publish after every USAGE.md change.
+- ~~G2 refund notice~~ done in 3e64849, shown live in seqs 122-128
+- Final price after pilots (5 for now, msg 144)
+- ~~Public USAGE link~~ art_jxNDKIyOJI (msg 139). Re-publish after every USAGE.md change, and update both links above.
+- "Delivery target is 3 minutes" is not yet tested under load. Change it if the burst test (msg 146/149) misses.
