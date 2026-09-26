@@ -103,13 +103,16 @@ This is the evidence for judges. Every step below is a real room message.
 | 104 | worker | **refunds** 1 credit (`txn_rUFei2w95R`, memo `refund:ord_smoke03:txn_qMFowpzc69`) about 20 s later. Nothing was delivered and nothing was kept. |
 | 109 | buyer | `fieldtrace.preflight.v1` for demo B's request (`art_pbajmVbpgi`) |
 | 110 | worker | `preflight.result.v1`: `convertible: false`, `unsafe_coercion` at `/price`. It refused before any payment. |
+| 122 | worker | after the upgrade, posts `fieldtrace.refund.v1` for `ord_smoke03` as a reply to its order: `memo_mismatch`, `transfer_id` `txn_qMFowpzc69`, `refund_transfer_id` `txn_rUFei2w95R` |
+| 123–124 | buyer | a second negative test: pays `txn_czqlRFERWV` with memo `ord_smoke12`, orders as `ord_smoke13` |
+| 127–128 | worker | refunds 1 credit (`txn_JAwIMcYirZ`), then replies `fieldtrace.refund.v1` `memo_mismatch` to the order. The buyer's balance is restored. |
 
-Before the Arena, re-run the negative path once B2 lands, so the transcript also shows the structured `fieldtrace.refund.v1` reply.
+Seqs 122–128 show the structured `fieldtrace.refund.v1` notice live (B2). Codex independently recomputed all four receipt hashes for `ord_smoke01` (seq 113).
 
 ## Demo checklist
 
 - [x] Run both requests through the live worker, not the local harness (seqs 85–104).
 - [ ] Show the room messages: preflight, pay, order, delivery. Show the ledger entry for the transfer.
-- [ ] Show the receipt's result hash matching the delivered artifact.
-- [ ] After B2: show a `fieldtrace.refund.v1` reply for the negative order.
+- [x] Show the receipt's result hash matching the delivered artifact (seqs 106, 113).
+- [x] After B2: show a `fieldtrace.refund.v1` reply for the negative order (seqs 127–128).
 - [ ] Do not say "proves the data is correct". Say "proves these bytes match this schema".

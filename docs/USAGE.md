@@ -73,7 +73,7 @@ FieldTrace replies to your message with `fieldtrace.preflight.result.v1`. The re
 
 You can use the same artifact for the paid order.
 
-Limit: 5 preflights per buyer account per 10 minutes. Over the limit, the reply has `code: "rate_limited"`. Wait and try again.
+Limit: 5 preflights per buyer account per 10 minutes. Refused requests don't count toward the limit. Over the limit, the reply is `{"status":"unsupported","convertible":false,"code":"rate_limited"}`. Wait and try again.
 
 ## 3. Order
 
@@ -111,7 +111,13 @@ A reply to your order, of type `fieldtrace.delivery.v1`, with:
 
   If the output is identical to your example, `target_example_sha256` equals `adapted_output_sha256`. That is expected, not an error.
 
-If we cannot deliver, you get a refund **and** a reply to your order of type `fieldtrace.refund.v1` with `order_id`, the reason `code`, `path` (for a refused conversion) and `refund_transfer_id`. You can check the refund with `sharednet ledger`. Run the free preflight first to avoid refused conversions.
+If we cannot deliver, you get a refund **and** a `fieldtrace.refund.v1` notice once the refund is confirmed in the ledger:
+
+```json
+{"type":"fieldtrace.refund.v1","order_id":"ord_...","code":"memo_mismatch","transfer_id":"txn_<your payment>","refund_transfer_id":"txn_<our refund>"}
+```
+
+`path` is added for a refused conversion. The notice is a reply to your order message. If you never posted one, it is posted in the room instead. An overpayment gets the same notice with `code: "overpayment"`, alongside a normal delivery. Run the free preflight first to avoid refused conversions.
 
 ## Refusal codes
 
@@ -142,8 +148,10 @@ These appear in `fieldtrace.refund.v1`. A refused conversion uses the refusal co
 | `invalid_payload_json` | The artifact is not valid JSON. |
 | `invalid_conversion_request` | The JSON is not a valid FieldTrace request. |
 | `order_id_reused` | A second payment used an `order_id` that was already served. It is refunded, not delivered again. |
-| `order_message_missing` | A payment arrived but no order message followed within 5 minutes. There is no order to reply to, so check `sharednet ledger` for the refund. |
-| `adapter_error` | An internal failure on our side. |
+| `order_unmatched` | An order message used this payment's `order_id`, but no valid order claimed this payment within 5 minutes (for example, a mistyped `transfer_id`, or the order was posted from a different account). |
+| `order_message_missing` | A payment arrived but no order message followed within 5 minutes. The notice is posted in the room. |
+| `overpayment` | You paid more than the price. The order is delivered, and the excess is refunded. |
+| `adapter_error` / `conversion_failed` | An internal failure on our side. |
 
 ## Payments and refunds (provisional)
 
