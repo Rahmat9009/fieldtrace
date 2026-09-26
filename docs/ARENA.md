@@ -32,7 +32,7 @@ Record for each team: convertible yes/no, refusal code, the price they answered,
 
 ## Open items this copy depends on
 
-- G1: preflight limiter (Ru; required before Arena, msg 76)
-- G2: `fieldtrace.refund.v1` reply (Ru; required before Arena, msg 76)
+- ~~G1 preflight limiter~~ done in ru/order-intake 2a22b2f
+- ~~G2 refund notice~~ done in 3e64849. Still to do: re-run the negative smoke to show it live
 - Final price after pilots
 - ~~Public USAGE link~~ done (msg 81). Re-publish after every USAGE.md change.
