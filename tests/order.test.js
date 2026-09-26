@@ -99,7 +99,7 @@ test('orphan scan only proposes refunds after a complete, aged ledger and room s
   assert.equal(scan().length, 1);
   assert.equal(scan()[0].refund_amount, 8);
   assert.deepEqual(scan({ historyComplete: false }), []);
-  assert.deepEqual(scan({ seenOrderIds: [orderId] }), []);
+  assert.equal(scan({ seenOrderIds: [orderId] })[0].code, 'order_unmatched');
   assert.deepEqual(scan({ prior: [{ transfer_id: transferId }] }), []);
   assert.deepEqual(scan({ now: '2026-09-25T12:01:00Z' }), []);
 });

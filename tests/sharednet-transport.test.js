@@ -72,3 +72,24 @@ test('legacy order-index backfill uses filtered room reads', async () => {
   assert.deepEqual(await transport.readAllOrderIds(), { orderIds: [], historyComplete: true });
   assert.deepEqual(calls[0], ['read', ['--after', '0', '--grep', 'fieldtrace.order', '--limit', '100']]);
 });
+
+test('refund notice search accepts only this worker seat and supports room posts', async () => {
+  const calls = [];
+  const content = JSON.stringify({ type: 'fieldtrace.refund.v1', refund_transfer_id: 'txn_ZyXwVuTsRq' });
+  const transport = createSharedNetTransport({ roomDir: '/joined-room', seatId: 'i_AbCdEfGhIj',
+    commandRunner: async (verb, args) => {
+      calls.push([verb, args]);
+      if (verb === 'read') return { items: [
+        { id: 'msg_AbCdEfGhI1', sender_instance_id: 'i_OtherSeat1', content },
+        { id: 'msg_AbCdEfGhI2', sender_instance_id: 'i_AbCdEfGhIj', content },
+      ], has_more: false };
+      if (verb === 'say') return { message: { id: 'msg_ZyXwVuTsRq' } };
+      throw new Error(`Unexpected ${verb}`);
+    },
+  });
+  assert.deepEqual(await transport.findRefundNotice('txn_ZyXwVuTsRq'),
+    { message_id: 'msg_AbCdEfGhI2' });
+  assert.deepEqual(await transport.post(content), { message_id: 'msg_ZyXwVuTsRq' });
+  assert.deepEqual(calls[0], ['read', ['--after', '0', '--grep', 'txn_ZyXwVuTsRq', '--limit', '100']]);
+  assert.deepEqual(calls[1], ['say', [content]]);
+});

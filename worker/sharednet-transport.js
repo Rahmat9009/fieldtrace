@@ -74,6 +74,27 @@ export function createSharedNetTransport({ roomDir, seatId, timeoutMs = 30000, c
       const result = await run('pay', [buyerPrincipalId, String(amount), '--memo', memo, '--room']);
       return { transfer_id: result.transfer?.id };
     },
+    findRefundNotice: async (refundTransferId) => {
+      let after = 0;
+      for (let page = 0; page < 100; page++) {
+        const batch = await run('read', ['--after', String(after), '--grep', refundTransferId, '--limit', '100']);
+        if (!Array.isArray(batch.items)) throw new Error('Unrecognized SharedNet room response');
+        for (const message of batch.items) {
+          try {
+            const body = JSON.parse(message.content);
+            if (message.sender_instance_id === seatId
+              && body.type === 'fieldtrace.refund.v1' && body.refund_transfer_id === refundTransferId) {
+              return { message_id: message.id };
+            }
+          } catch { /* A non-JSON message is not a refund notice. */ }
+        }
+        const last = batch.items.at(-1)?.sequence ?? after;
+        if (!batch.has_more) return null;
+        if (last <= after) throw new Error('Refund notice search made no progress');
+        after = last;
+      }
+      throw new Error('Refund notice search limit reached');
+    },
     transfersSince: async (startedAt) => {
       const threshold = Date.parse(startedAt);
       if (!Number.isFinite(threshold)) throw new TypeError('Invalid service start time');
@@ -152,6 +173,10 @@ export function createSharedNetTransport({ roomDir, seatId, timeoutMs = 30000, c
     },
     reply: async (messageId, content) => {
       const result = await run('say', [content, '--reply-to', messageId]);
+      return { message_id: result.message?.id ?? result.id };
+    },
+    post: async (content) => {
+      const result = await run('say', [content]);
       return { message_id: result.message?.id ?? result.id };
     },
   };

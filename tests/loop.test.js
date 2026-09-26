@@ -63,7 +63,7 @@ test('supervisor restarts after a read failure with backoff', async () => {
   });
 });
 
-test('orphan scan uses persisted incremental order ids without re-reading room history', async () => {
+test('orphan scan uses persisted order ids and stages an unmatched transfer without re-reading room history', async () => {
   await withJournal(async (journal) => {
     await journal.noteOrderId('ord_existing01');
     await runCycle({ journal, transport: {
@@ -75,6 +75,26 @@ test('orphan scan uses persisted incremental order ids without re-reading room h
     }, adapt: async () => {}, price: 5, sellerPrincipalId: seller,
     serviceStartedAt: '2026-09-25T11:00:00Z', graceMs: 300000,
     refundsEnabled: false, log: async () => {}, now: () => Date.parse('2026-09-25T12:10:00Z') });
-    assert.deepEqual(journal.snapshot().records, []);
+    assert.deepEqual(journal.snapshot().records.map((record) =>
+      [record.transfer_id, record.refund_reason, record.status]),
+    [['txn_AbCdEfGhI1', 'order_unmatched', 'refund_pending']]);
+  });
+});
+
+test('a capped payment lookup leaves the pending queue without reserving the order', async () => {
+  await withJournal(async (journal) => {
+    const message = makeMessage(1, 'ord_typo001', 'txn_AbCdEfGhI1');
+    await journal.queueMessage(message);
+    await journal.notePaymentFailure(message.id, 'txn_AbCdEfGhI1', 'transfer_not_found',
+      new Date(Date.now() - 180000).toISOString(), 180000);
+    await runCycle({ journal, transport: {
+      readPage: async () => ({ items: [], has_more: false }),
+      findTransfer: async () => null,
+    }, adapt: async () => { throw new Error('must not adapt'); }, price: 5,
+    sellerPrincipalId: seller, graceMs: null, refundsEnabled: false,
+    log: async () => {} });
+    assert.equal(journal.snapshot().pending_messages.length, 0);
+    assert.equal(journal.snapshot().records.length, 0);
+    assert.equal(journal.snapshot().payment_failures[message.id].terminal, true);
   });
 });

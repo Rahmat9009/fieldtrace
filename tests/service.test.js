@@ -123,3 +123,75 @@ test('confirmed artifact failures become a refund after three minutes, while tra
     assert.equal(journal.snapshot().records[0].refund_reason, 'artifact_missing');
   });
 });
+
+test('missing and invalid ledger entries stop retrying after three minutes', async () => {
+  for (const [code, found] of [
+    ['transfer_not_found', null],
+    ['invalid_ledger_amount', { ...transfer, amount: '8' }],
+  ]) {
+    await withJournal(async (journal) => {
+      let current = '2026-09-25T12:00:00.000Z';
+      const args = { message: orderMessage, journal, price: 8, sellerPrincipalId: seller,
+        now: () => current, adapt: () => { throw new Error('must not adapt'); },
+        transport: { findTransfer: async () => found,
+          download: async () => { throw new Error('must not download'); } },
+      };
+      assert.deepEqual(await handleRoomMessage(args), { status: 'retry_later', code });
+      current = '2026-09-25T12:02:59.999Z';
+      assert.equal((await handleRoomMessage(args)).status, 'retry_later');
+      current = '2026-09-25T12:03:00.000Z';
+      assert.deepEqual(await handleRoomMessage(args), { status: 'rejected', code });
+      assert.equal(journal.snapshot().payment_failures[orderMessage.id].terminal, true);
+      assert.equal(journal.snapshot().records.length, 0);
+    });
+  }
+});
+
+test('preflight limits each buyer to five requests in a sliding ten-minute window', async () => {
+  await withJournal(async (journal) => {
+    let downloads = 0;
+    const replies = [];
+    let current = '2026-09-25T12:00:00.000Z';
+    const transport = {
+      download: async () => { downloads++; return { status: 'found', bytes: requestBytes }; },
+      reply: async (_id, content) => {
+        replies.push(JSON.parse(content));
+        return { message_id: 'msg_ZyXwVuTsRq' };
+      },
+    };
+    const send = (id, principal = buyer) => handleRoomMessage({
+      message: { id: `msg_AbCdEfGhI${id}`, sender_principal_id: principal,
+        content: encodePreflightMessage({ artifactId, artifactSha256: hash }) },
+      journal, transport, price: 8, sellerPrincipalId: seller, now: () => current,
+      adapt: () => ({ status: 'ok', convertible: true, change_count: 0 }),
+    });
+    for (let id = 1; id <= 5; id++) assert.equal((await send(id)).status, 'ok');
+    assert.equal((await send(6)).code, 'rate_limited');
+    assert.equal((await send(6)).code, 'rate_limited');
+    assert.equal(downloads, 5);
+    assert.equal(replies.at(-1).type, 'fieldtrace.preflight.result.v1');
+    assert.equal(replies.at(-1).code, 'rate_limited');
+    assert.equal((await send(7, 'p_OtherBuyer')).status, 'ok');
+    current = '2026-09-25T12:10:00.000Z';
+    assert.equal((await send(8)).status, 'ok');
+    assert.equal(downloads, 7);
+  });
+});
+
+test('changing ledger failure codes does not restart the payment retry timer', async () => {
+  await withJournal(async (journal) => {
+    let current = '2026-09-25T12:00:00.000Z';
+    let found = null;
+    const args = { message: orderMessage, journal, price: 8, sellerPrincipalId: seller,
+      now: () => current, adapt: () => { throw new Error('must not adapt'); },
+      transport: { findTransfer: async () => found },
+    };
+    assert.equal((await handleRoomMessage(args)).code, 'transfer_not_found');
+    current = '2026-09-25T12:02:00.000Z';
+    found = { ...transfer, amount: '8' };
+    assert.equal((await handleRoomMessage(args)).status, 'retry_later');
+    current = '2026-09-25T12:03:00.000Z';
+    assert.deepEqual(await handleRoomMessage(args),
+      { status: 'rejected', code: 'invalid_ledger_amount' });
+  });
+});

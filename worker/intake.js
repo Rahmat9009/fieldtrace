@@ -149,6 +149,8 @@ export function findOrphanPayments({ transfers, seenOrderIds, prior = [], seller
   if (!Number.isFinite(start) || !Number.isFinite(current)) return [];
   const seen = new Set(seenOrderIds);
   const recorded = new Set(prior.map((record) => record.transfer_id));
+  const recordedOrders = new Set(prior.flatMap((record) =>
+    [record.order_id, record.claimed_order_id].filter(Boolean)));
   return transfers.filter((transfer) => {
     const created = Date.parse(transfer.created_at);
     return transfer.to === sellerPrincipalId
@@ -156,9 +158,12 @@ export function findOrphanPayments({ transfers, seenOrderIds, prior = [], seller
       && ORDER_ID_PATTERN.test(transfer.memo ?? '')
       && Number.isSafeInteger(transfer.amount) && transfer.amount > 0
       && Number.isFinite(created) && created >= start && current - created >= graceMs
-      && !seen.has(transfer.memo) && !recorded.has(transfer.id);
+      && !recorded.has(transfer.id);
   }).map((transfer) => ({
-    status: 'refund_required', code: 'order_message_missing', order_id: transfer.memo,
+    status: 'refund_required',
+    code: recordedOrders.has(transfer.memo) ? 'order_id_reused'
+      : seen.has(transfer.memo) ? 'order_unmatched' : 'order_message_missing',
+    order_id: transfer.memo,
     transfer_id: transfer.id, buyer_principal_id: transfer.from, refund_amount: transfer.amount,
   }));
 }
