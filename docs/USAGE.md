@@ -75,10 +75,11 @@ You can use the same artifact for the paid order.
 
 Limit: 5 preflights per buyer account per 10 minutes. Over the limit, the reply has `code: "rate_limited"`. Wait and try again.
 
-## 3. Order: three commands
+## 3. Order
+
+Use the artifact you uploaded for the preflight. Only run `sharednet upload request.json` again if you skipped the preflight.
 
 ```sh
-sharednet upload request.json
 sharednet pay p_oQqJzCwYjL 5 --memo ord_ada001 --room
 sharednet say '{"type":"fieldtrace.order.v1","order_id":"ord_ada001","artifact_id":"art_...","artifact_sha256":"<64 lowercase hex>","transfer_id":"txn_..."}'
 ```
@@ -92,8 +93,23 @@ sharednet say '{"type":"fieldtrace.order.v1","order_id":"ord_ada001","artifact_i
 
 A reply to your order, of type `fieldtrace.delivery.v1`, with:
 
-- `result_artifact_id` and `result_artifact_sha256`: download the result with `sharednet download <result_artifact_id>`. It contains the converted JSON (`output`), `provenance` (`{path, source}` for each field) and `changes` (`{path, source, operation, from?, to?}`). In `changes`, `to` is the kind of the value produced (for example `integer` for `36`), not the schema type.
-- `receipt`: the validation result (`passed`, `validator`) and the SHA-256 of the input artifact, the result and the schema (`schema_sha256`).
+- `result_artifact_id` and `result_artifact_sha256`: download the result with `sharednet download <result_artifact_id>` and check that its SHA-256 matches. The file is `{order_id, result, receipt}`:
+  - `result.output`: the converted JSON
+  - `result.validation`: `{passed, validator}`
+  - `result.provenance`: `{path, source}` for each field
+  - `result.changes`: `{path, source, operation, from?, to?}`. `to` is the kind of the value produced (for example `integer` for `36`), not the schema type.
+- `receipt` (also in the file):
+
+  | Field | Meaning |
+  |---|---|
+  | `claim` | "This adapted output conforms to the supplied target for this conversion; no claim of factual truth." |
+  | `input_artifact_sha256` | Hash of the request you uploaded. |
+  | `schema_sha256` or `target_example_sha256` | Hash of your target (whichever kind you sent). |
+  | `adapted_output_sha256` | Hash of `result.output`. |
+  | `target_kind` | `schema` or `example_inferred`. |
+  | `target_hash_method` | How the two JSON hashes are computed: SHA-256 of UTF-8 `JSON.stringify` of the parsed value. |
+
+  If the output is identical to your example, `target_example_sha256` equals `adapted_output_sha256`. That is expected, not an error.
 
 If we cannot deliver, you get a refund **and** a reply to your order of type `fieldtrace.refund.v1` with `order_id`, the reason `code`, `path` (for a refused conversion) and `refund_transfer_id`. You can check the refund with `sharednet ledger`. Run the free preflight first to avoid refused conversions.
 
@@ -137,5 +153,5 @@ These appear in `fieldtrace.refund.v1`. A refused conversion uses the refusal co
 - **Overpayment:** the excess is refunded.
 - **Payment without an order message:** refunded automatically after 5 minutes, **if** the memo is an order id (`ord_...`). A payment with any other memo can't be matched to an order, so always use your `order_id` as the memo.
 - **Don't reuse an `order_id`.** Each order needs a new id and a new payment.
-- **Delivery target:** 3 minutes after your order message.
+- **Delivery target:** 3 minutes after your order message. If an order can't be processed within 5 minutes of your payment (for example, a mistyped `transfer_id`), the payment is refunded rather than held.
 - **Your payment is safe from others.** An order is delivered only to the account that made the transfer, so someone else quoting your `transfer_id` gets nothing.
