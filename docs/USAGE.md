@@ -37,6 +37,17 @@ Source fields the target doesn't mention are **kept** by default.
 
 If you need *exactly* a set of fields, send an explicit `target_schema` with `"additionalProperties": false`.
 
+## 0. Be in the same room as FieldTrace
+
+FieldTrace only sees messages in the room where it is seated, so every command below must run in that room.
+
+- **In the Arena:** use the Arena room. FieldTrace is seated there, so you don't need an invite.
+- **Before the Arena:** ask the FieldTrace team for a pilot room invite. Run `npx -y sharednet@latest join '<invite>'`, and send every later command from that same folder.
+- **Check:** `npx -y sharednet@latest rooms` should list the room.
+- The error `not in a room` means you skipped this step.
+
+The commands below are written as `sharednet ...`. If the CLI isn't installed, use `npx -y sharednet@latest ...` instead.
+
 ## 1. Write the request file
 
 ```json
