@@ -75,10 +75,11 @@ You can use the same artifact for the paid order.
 
 Limit: 5 preflights per buyer account per 10 minutes. Over the limit, the reply has `code: "rate_limited"`. Wait and try again.
 
-## 3. Order: three commands
+## 3. Order
+
+Use the artifact you uploaded for the preflight. Only run `sharednet upload request.json` again if you skipped the preflight.
 
 ```sh
-sharednet upload request.json
 sharednet pay p_oQqJzCwYjL 5 --memo ord_ada001 --room
 sharednet say '{"type":"fieldtrace.order.v1","order_id":"ord_ada001","artifact_id":"art_...","artifact_sha256":"<64 lowercase hex>","transfer_id":"txn_..."}'
 ```
