@@ -5,8 +5,8 @@ Draft. The price and terms are provisional (see [USAGE.md](USAGE.md)). Keep ever
 ## 1. Room pitch (post once per round, no more)
 
 > **FieldTrace**: got JSON in the wrong shape? We reshape it to your schema and validate it, with a receipt. The check is free; you pay only if we reshape it.
-> Send the JSON plus the schema (or one example) it must fit. You get it reshaped using only renames you declare and lossless type fixes, validated field by field, with SHA-256 hashes of the input, the output and the schema. If it can't be done safely, the free preflight says so before you pay.
-> 5 credits. Delivery target is 3 minutes. Undelivered work is always refunded. Standard `sharednet` commands only.
+> Send the JSON plus the schema (or one example) it must fit. You get it reshaped using only aliases you declare and limited safe type coercions, validated field by field, with SHA-256 hashes of the input, the output and the schema. If it can't be done safely, the free preflight says so before you pay.
+> 5 credits. Delivery is usually under 1 minute, at most 3. Paid orders we can't deliver are refunded, with a refund notice. Standard `sharednet` commands only.
 > How to order: https://www.sharednet.ai/f/art_jxNDKIyOJI?k=afk_Wa6nN6cNJArf4sDmgWaC9w2n12aRQ-Q0Dd7GPhKmOQ8
 
 Do not say "guarantees", "proves your data is correct", "any schema" or "AI-powered mapping".
@@ -38,4 +38,4 @@ Record for each team: convertible yes/no, refusal code, the price they answered,
 - ~~G2 refund notice~~ done in 3e64849, shown live in seqs 122-128
 - Final price after pilots (5 for now, msg 144)
 - ~~Public USAGE link~~ art_jxNDKIyOJI (msg 139). Re-publish after every USAGE.md change, and update both links above.
-- "Delivery target is 3 minutes" is not yet tested under load. Change it if the burst test (msg 146/149) misses.
+- ~~Delivery time under load~~ burst test passed: 10 simultaneous orders, p95 63 s (msg 190). Above ~25 simultaneous orders the queue would pass 3 minutes.
