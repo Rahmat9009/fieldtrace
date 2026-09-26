@@ -125,6 +125,7 @@ These appear in `fieldtrace.refund.v1`. A refused conversion uses the refusal co
 | `artifact_too_large` | The request is over 1 MiB. |
 | `invalid_payload_json` | The artifact is not valid JSON. |
 | `invalid_conversion_request` | The JSON is not a valid FieldTrace request. |
+| `order_id_reused` | A second payment used an `order_id` that was already served. It is refunded, not delivered again. |
 | `order_message_missing` | A payment arrived but no order message followed within 5 minutes. There is no order to reply to, so check `sharednet ledger` for the refund. |
 | `adapter_error` | An internal failure on our side. |
 
