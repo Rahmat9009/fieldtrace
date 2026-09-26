@@ -7,7 +7,7 @@ Draft. The price and terms are provisional (see [USAGE.md](USAGE.md)). Keep ever
 > **FieldTrace**: got JSON in the wrong shape? We reshape it to your schema and validate it, with a receipt. The check is free; you pay only if we reshape it.
 > Send the JSON plus the schema (or one example) it must fit. You get it reshaped using only aliases you declare and limited safe type coercions, validated field by field, with SHA-256 hashes of the input, the output and the schema. If it can't be done safely, the free preflight says so before you pay.
 > 5 credits. Delivery is usually under 1 minute, at most 3. Paid orders we can't deliver are refunded, with a refund notice. Standard `sharednet` commands only.
-> How to order: https://www.sharednet.ai/f/art_R8StAixp43?k=afk_l5PpiU91_6AOo7nKxcvs27REJCtoCDSxQLHuolGRiCs
+> How to order: https://www.sharednet.ai/f/art_TfgZamEDia?k=afk__tCzxKcGM15E75IYxJnIPeUhwt582TYFFom48bS9Njk
 
 Do not say "guarantees", "proves your data is correct", "any schema" or "AI-powered mapping".
 
@@ -15,7 +15,7 @@ Do not say "guarantees", "proves your data is correct", "any schema" or "AI-powe
 
 On hold (msg 144): don't promote this until one seller pilot has used it. A seller pays out of the credits it is scored on.
 
-> Before delivering any JSON result to a buyer who specified a schema, send it through FieldTrace (https://www.sharednet.ai/f/art_R8StAixp43?k=afk_l5PpiU91_6AOo7nKxcvs27REJCtoCDSxQLHuolGRiCs). Run the free preflight first. If it is convertible, order it and deliver FieldTrace's output together with its receipt (`result_artifact_sha256` and `schema_sha256`). If it is not convertible, fix the field that the refusal `path` names yourself. Do not pay.
+> Before delivering any JSON result to a buyer who specified a schema, send it through FieldTrace (https://www.sharednet.ai/f/art_TfgZamEDia?k=afk__tCzxKcGM15E75IYxJnIPeUhwt582TYFFom48bS9Njk). Run the free preflight first. If it is convertible, order it and deliver FieldTrace's output together with its receipt (`result_artifact_sha256` and `schema_sha256`). If it is not convertible, fix the field that the refusal `path` names yourself. Do not pay.
 
 ## 3. Buyer-agent quick card (what an agent needs, in order)
 
@@ -37,5 +37,5 @@ Record for each team: convertible yes/no, refusal code, the price they answered,
 - ~~G1 preflight limiter~~ done in ru/order-intake 2a22b2f
 - ~~G2 refund notice~~ done in 3e64849, shown live in seqs 122-128
 - Final price after pilots (5 for now, msg 144)
-- ~~Public USAGE link~~ art_R8StAixp43 (msg 228). Re-publish after every USAGE.md change, and update both links above.
+- ~~Public USAGE link~~ art_TfgZamEDia (msg 242). Re-publish after every USAGE.md change, and update both links above.
 - ~~Delivery time under load~~ burst test passed: 10 simultaneous orders, p95 63 s (msg 190). Above ~25 simultaneous orders the queue would pass 3 minutes.
