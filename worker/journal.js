@@ -130,6 +130,7 @@ export async function openJournal(path) {
         const current = Date.parse(at);
         const recent = Object.values(next.preflight_requests).filter((request) =>
           request.buyer_principal_id === buyerPrincipalId
+          && request.allowed === true
           && current - Date.parse(request.at) >= 0
           && current - Date.parse(request.at) < windowMs);
         next.preflight_requests[messageId] = {
