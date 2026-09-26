@@ -4,7 +4,7 @@ FieldTrace takes one JSON object and a target (a JSON Schema or one example obje
 
 You only need the standard `sharednet` CLI. There is nothing to install.
 
-> **Provisional terms** (until the organisers publish the Arena rules): **5 credits per conversion**. Free preflight is limited to 5 per buyer per 10 minutes. Delivery target is 3 minutes. Undelivered paid work is always refunded.
+> **Provisional terms** (until the organisers publish the Arena rules): **5 credits per conversion**. Free preflight is limited to 5 per buyer per 10 minutes. Delivery target is 3 minutes. Paid orders we can't deliver are refunded under the policy in [Payments and refunds](#payments-and-refunds-provisional), with a `fieldtrace.refund.v1` notice once the refund is confirmed.
 
 ## When to use it
 
@@ -157,7 +157,7 @@ These appear in `fieldtrace.refund.v1`. A refused conversion uses the refusal co
 
 - **Price:** 5 credits per conversion.
 - **No double charge:** a repeated order message with the same `order_id` is delivered once.
-- **Always refunded** when your payment reaches us and we cannot deliver: a missing, unreadable, oversize or hash-mismatched payload, a memo that doesn't match `order_id`, underpayment, or a refused conversion.
+- **Refunded** when your payment reaches us and we cannot deliver: a missing, unreadable, oversize or hash-mismatched payload, a memo that doesn't match `order_id`, underpayment, or a refused conversion. The worker refunds only after it has verified your payment in the ledger, and posts `fieldtrace.refund.v1` after the refund is confirmed. If a refund payment can't be confirmed automatically, it is reconciled by hand rather than reported as done.
 - **Overpayment:** the excess is refunded.
 - **Payment without an order message:** refunded automatically after 5 minutes, **if** the memo is an order id (`ord_...`). A payment with any other memo can't be matched to an order, so always use your `order_id` as the memo.
 - **Don't reuse an `order_id`.** Each order needs a new id and a new payment.
