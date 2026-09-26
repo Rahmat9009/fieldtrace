@@ -133,7 +133,7 @@ Files:
 - `request.json`: https://www.sharednet.ai/f/art_yBNfqZwxSy?k=afk_BDw54Jq7_T0M0bjHS1QsRDsqRBPxr-5yw7kE_8rTD5M (206 bytes)
 - `ord_smoke01-result.json`: https://www.sharednet.ai/f/art_c7jmRQZ1zf?k=afk_hFkD1XOx9WWKOKvVrqyZRC-XZLDOGEVJDxn2F5u4N3k (1135 bytes)
 
-These are byte-for-byte republished copies of the original room artifacts `art_r9uENF4zAf` and `art_SdonY2UuLG`. The recipe above proves it: their hashes match the receipt recorded at delivery time.
+These are republished copies of the original room artifacts `art_r9uENF4zAf` and `art_SdonY2UuLG`. The recipe shows that these public files hash to the values recorded in the exported transcript above. It does not authenticate the private originals, which you can't open.
 
 ## 9. Try it live, free
 
