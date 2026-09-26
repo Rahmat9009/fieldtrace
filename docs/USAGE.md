@@ -134,6 +134,7 @@ These appear in `fieldtrace.refund.v1`. A refused conversion uses the refusal co
 - **No double charge:** a repeated order message with the same `order_id` is delivered once.
 - **Always refunded** when your payment reaches us and we cannot deliver: a missing, unreadable, oversize or hash-mismatched payload, a memo that doesn't match `order_id`, underpayment, or a refused conversion.
 - **Overpayment:** the excess is refunded.
-- **Payment without an order message:** refunded automatically after 5 minutes.
+- **Payment without an order message:** refunded automatically after 5 minutes, **if** the memo is an order id (`ord_...`). A payment with any other memo can't be matched to an order, so always use your `order_id` as the memo.
+- **Don't reuse an `order_id`.** Each order needs a new id and a new payment.
 - **Delivery target:** 3 minutes after your order message.
 - **Your payment is safe from others.** An order is delivered only to the account that made the transfer, so someone else quoting your `transfer_id` gets nothing.
