@@ -2,7 +2,12 @@ import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import {
   assessOrder, assessPreflight, findOrphanPayments, parseOrderMessage, parsePreflightMessage,
+  verifyTransfer,
 } from './intake.js';
+
+// Refund-only journal keys cannot be supplied as order IDs by buyers. A
+// transfer, rather than its memo, identifies each separate credit movement.
+const refundCaseId = (transferId) => `refund_${transferId}`;
 
 function journalRecord(order) {
   return {
@@ -15,13 +20,14 @@ function journalRecord(order) {
 /**
  * Transport contract:
  * - findTransfer(id) -> normalized ledger transfer or null
- * - download(id) -> {status:'found',bytes} | {status:'missing'|'temporary_error'}
+ * - download(id) -> {status:'found',bytes} | {status:'too_large'|'confirmed_failure'|'temporary_error'}
  * - upload(bytes, filename) -> {artifact_id}
  * - reply(messageId, content) -> {message_id}
  * No refund is executed here. Every refund decision is journaled for a
  * policy-aware executor to reconcile and perform once.
  */
-export async function handleRoomMessage({ message, transport, journal, adapt, price, sellerPrincipalId }) {
+export async function handleRoomMessage({ message, transport, journal, adapt, price, sellerPrincipalId,
+  now = () => new Date().toISOString(), artifactFailureMs = 180000, paymentRetryMs = 180000 }) {
   let preflight;
   let order;
   try {
@@ -32,6 +38,14 @@ export async function handleRoomMessage({ message, transport, journal, adapt, pr
     throw error;
   }
   if (preflight) {
+    const rate = await journal.checkPreflightRate(preflight.messageId, preflight.buyerPrincipalId, now());
+    if (!rate.allowed) {
+      const decision = { status: 'unsupported', convertible: false, code: 'rate_limited' };
+      await transport.reply(preflight.messageId, JSON.stringify({
+        type: 'fieldtrace.preflight.result.v1', artifact_id: preflight.artifactId, ...decision,
+      }));
+      return decision;
+    }
     const artifact = await transport.download(preflight.artifactId);
     const decision = await assessPreflight({ preflight, artifact, adapt, price });
     if (decision.status === 'retry_later') return decision;
@@ -42,11 +56,46 @@ export async function handleRoomMessage({ message, transport, journal, adapt, pr
   }
 
   if (!order) return { status: 'ignored' };
+  const capPaymentRetry = async (decision) => {
+    if (decision.status === 'retry_later'
+      && ['transfer_not_found', 'invalid_ledger_amount'].includes(decision.code)) {
+      const failure = await journal.notePaymentFailure(order.messageId, order.transferId,
+        decision.code, now(), paymentRetryMs);
+      return failure.terminal ? { status: 'rejected', code: decision.code } : decision;
+    }
+    if (journal.snapshot().payment_failures[order.messageId]) {
+      await journal.clearPaymentFailure(order.messageId);
+    }
+    return decision;
+  };
   const prior = journal.snapshot().records;
+  const existing = prior.find((record) => record.order_id === order.orderId
+    && record.transfer_id === order.transferId && record.artifact_id === order.artifactId);
+  if (existing && ['reserved', 'delivery_pending', 'reply_pending'].includes(existing.status)) {
+    // These states may follow an ambiguous adapter/upload/reply failure. Keep
+    // the message queued for reconciliation; never silently drop or repeat a
+    // potentially completed side effect.
+    return { status: 'retry_later', code: 'delivery_reconciliation_required' };
+  }
   const transfer = await transport.findTransfer(order.transferId);
+  const sameOrder = prior.find((record) => record.order_id === order.orderId);
+  const sameTransfer = prior.find((record) => record.transfer_id === order.transferId);
+  if (sameOrder && (!sameTransfer || sameTransfer.order_id === refundCaseId(order.transferId))) {
+    // A buyer can accidentally pay twice with the same memo. Verify the new
+    // transfer before recording a separate refund; never overwrite delivery.
+    const payment = verifyTransfer(order, transfer, { sellerPrincipalId, price });
+    if (!payment.ok && !payment.refundable) {
+      return capPaymentRetry({ status: payment.retryable ? 'retry_later' : 'rejected', code: payment.code });
+    }
+    await capPaymentRetry({ status: 'verified' });
+    const caseId = refundCaseId(order.transferId);
+    if (!sameTransfer) await journal.reserveRefund({ ...journalRecord(order), order_id: caseId,
+      claimed_order_id: order.orderId, refund_reason: 'order_id_reused', refund_amount: transfer.amount });
+    return { status: 'refund_required', code: 'order_id_reused', refund_amount: transfer.amount };
+  }
   // Payment is checked before any artifact download. A malformed or absent
   // transfer cannot induce us to read a third party's private artifact.
-  const paymentOnly = assessOrder({ order, transfer, prior, sellerPrincipalId, price });
+  const paymentOnly = await capPaymentRetry(assessOrder({ order, transfer, prior, sellerPrincipalId, price }));
   if (paymentOnly.status === 'duplicate' || paymentOnly.status === 'rejected') return paymentOnly;
   if (paymentOnly.status === 'retry_later' && paymentOnly.code !== 'artifact_unavailable') return paymentOnly;
   if (paymentOnly.status === 'refund_required') {
@@ -57,7 +106,18 @@ export async function handleRoomMessage({ message, transport, journal, adapt, pr
     return paymentOnly;
   }
 
-  const artifact = await transport.download(order.artifactId);
+  let artifact = await transport.download(order.artifactId);
+  if (artifact.status === 'confirmed_failure') {
+    const at = now();
+    const failure = await journal.noteArtifactFailure(order.orderId, order.artifactId, order.transferId, at);
+    if (failure.attempts >= 2 && Date.parse(at) - Date.parse(failure.first_at) >= artifactFailureMs) {
+      artifact = { status: 'missing' };
+    } else {
+      artifact = { status: 'temporary_error' };
+    }
+  } else if (artifact.status === 'found') {
+    await journal.clearArtifactFailure(order.orderId);
+  }
   const decision = assessOrder({ order, transfer, artifact, prior, sellerPrincipalId, price });
   if (decision.status === 'retry_later' || decision.status === 'rejected') return decision;
   await journal.reserve(journalRecord(order));
@@ -71,6 +131,7 @@ export async function handleRoomMessage({ message, transport, journal, adapt, pr
   if (result?.status !== 'ok' || result.convertible !== true) {
     await journal.setStatus(order.orderId, 'refund_pending', {
       refund_reason: result?.code ?? 'conversion_failed', refund_amount: transfer.amount,
+      ...(typeof result?.path === 'string' ? { refund_path: result.path } : {}),
     });
     return { status: 'refund_required', code: result?.code ?? 'conversion_failed', refund_amount: transfer.amount };
   }
@@ -116,9 +177,10 @@ export async function stageOrphanRefunds({ transfers, seenOrderIds, journal, sel
   const candidates = findOrphanPayments({ transfers, seenOrderIds, prior: journal.snapshot().records,
     sellerPrincipalId, serviceStartedAt, now, graceMs, historyComplete });
   for (const candidate of candidates) {
-    await journal.reserve({ order_id: candidate.order_id, transfer_id: candidate.transfer_id,
-      artifact_id: null, buyer_principal_id: candidate.buyer_principal_id, message_id: null });
-    await journal.setStatus(candidate.order_id, 'refund_pending', {
+    const caseId = refundCaseId(candidate.transfer_id);
+    await journal.reserveRefund({ order_id: caseId, claimed_order_id: candidate.order_id,
+      transfer_id: candidate.transfer_id, artifact_id: null,
+      buyer_principal_id: candidate.buyer_principal_id, message_id: null,
       refund_reason: candidate.code, refund_amount: candidate.refund_amount,
     });
   }

@@ -1,12 +1,17 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { parseOrderMessage } from './intake.js';
+import { MAX_ARTIFACT_BYTES, parseOrderMessage } from './intake.js';
 
 const execFileAsync = promisify(execFile);
+
+function isArtifactSpecificFailure(error) {
+  const detail = `${error?.message ?? ''} ${error?.stderr ?? ''}`;
+  return /artifact.{0,80}(not[_ -]?found|does not exist|missing|unreadable|access[_ -]?denied|permission[_ -]?denied)|(?:not found|does not exist|missing|unreadable|access denied|permission denied).{0,80}artifact/i.test(detail);
+}
 
 function normalizeTransfer(raw) {
   const source = raw.from_principal_id ?? raw.from?.principal_id ?? raw.from?.id ?? raw.from;
@@ -69,6 +74,27 @@ export function createSharedNetTransport({ roomDir, seatId, timeoutMs = 30000, c
       const result = await run('pay', [buyerPrincipalId, String(amount), '--memo', memo, '--room']);
       return { transfer_id: result.transfer?.id };
     },
+    findRefundNotice: async (refundTransferId) => {
+      let after = 0;
+      for (let page = 0; page < 100; page++) {
+        const batch = await run('read', ['--after', String(after), '--grep', refundTransferId, '--limit', '100']);
+        if (!Array.isArray(batch.items)) throw new Error('Unrecognized SharedNet room response');
+        for (const message of batch.items) {
+          try {
+            const body = JSON.parse(message.content);
+            if (message.sender_instance_id === seatId
+              && body.type === 'fieldtrace.refund.v1' && body.refund_transfer_id === refundTransferId) {
+              return { message_id: message.id };
+            }
+          } catch { /* A non-JSON message is not a refund notice. */ }
+        }
+        const last = batch.items.at(-1)?.sequence ?? after;
+        if (!batch.has_more) return null;
+        if (last <= after) throw new Error('Refund notice search made no progress');
+        after = last;
+      }
+      throw new Error('Refund notice search limit reached');
+    },
     transfersSince: async (startedAt) => {
       const threshold = Date.parse(startedAt);
       if (!Number.isFinite(threshold)) throw new TypeError('Invalid service start time');
@@ -88,7 +114,8 @@ export function createSharedNetTransport({ roomDir, seatId, timeoutMs = 30000, c
       const ids = new Set();
       let after = 0;
       for (let page = 0; page < 100; page++) {
-        const batch = await readPage(after);
+        const batch = await run('read', ['--after', String(after), '--grep', 'fieldtrace.order', '--limit', '100']);
+        if (!Array.isArray(batch.items)) throw new Error('Unrecognized SharedNet room response');
         for (const message of batch.items) {
           try {
             const order = parseOrderMessage(message);
@@ -106,16 +133,29 @@ export function createSharedNetTransport({ roomDir, seatId, timeoutMs = 30000, c
       const out = join(dir, 'request.json');
       try {
         const result = await run('download', [artifactId, '--out', out]);
-        const bytes = await readFile(out);
+        const advertisedSize = result.artifact?.size_bytes ?? result.size_bytes;
+        if (Number.isSafeInteger(advertisedSize) && advertisedSize > MAX_ARTIFACT_BYTES) {
+          return { status: 'too_large', size_bytes: advertisedSize };
+        }
+        let fileSize;
+        try { fileSize = (await stat(out)).size; } catch (error) {
+          return { status: 'confirmed_failure', reason: `artifact_unreadable: ${error.message}` };
+        }
+        if (fileSize > MAX_ARTIFACT_BYTES) return { status: 'too_large', size_bytes: fileSize };
+        let bytes;
+        try { bytes = await readFile(out); } catch (error) {
+          return { status: 'confirmed_failure', reason: `artifact_unreadable: ${error.message}` };
+        }
         const digest = createHash('sha256').update(bytes).digest('hex');
         if (result.verified === false || result.sha256 !== digest) {
-          return { status: 'temporary_error' };
+          return { status: 'confirmed_failure', reason: 'artifact_integrity_failed' };
         }
         return { status: 'found', bytes };
       } catch (error) {
-        // Transport, permission, and eventual-consistency errors all retry.
-        // A refund needs a separately confirmed permanent absence.
-        return { status: 'temporary_error', reason: error.message };
+        // Only artifact-specific failures advance the three-minute refund
+        // timer; a general CLI or network outage must not mass-refund orders.
+        return { status: isArtifactSpecificFailure(error) ? 'confirmed_failure' : 'temporary_error',
+          reason: error.message };
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
@@ -133,6 +173,10 @@ export function createSharedNetTransport({ roomDir, seatId, timeoutMs = 30000, c
     },
     reply: async (messageId, content) => {
       const result = await run('say', [content, '--reply-to', messageId]);
+      return { message_id: result.message?.id ?? result.id };
+    },
+    post: async (content) => {
+      const result = await run('say', [content]);
       return { message_id: result.message?.id ?? result.id };
     },
   };

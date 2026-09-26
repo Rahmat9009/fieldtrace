@@ -1,9 +1,9 @@
 import { resolve } from 'node:path';
+import { appendFile } from 'node:fs/promises';
 import { openJournal } from './journal.js';
 import { runAdapter } from './run-adapter.js';
-import { handleRoomMessage, stageOrphanRefunds } from './service.js';
 import { createSharedNetTransport } from './sharednet-transport.js';
-import { processRefundRecord } from './refund.js';
+import { superviseWorker } from './loop.js';
 
 function parseOptions(args) {
   const options = {};
@@ -25,7 +25,8 @@ function parseOptions(args) {
   return {
     roomDir: resolve(options['room-dir']), seatId: options.seat,
     sellerPrincipalId: options.seller, price,
-    journalPath: resolve(options.journal), serviceStartedAt: options['started-at'], graceMs,
+    journalPath: resolve(options.journal), logPath: resolve(options.log ?? `${options.journal}.log`),
+    serviceStartedAt: options['started-at'], graceMs,
     refundsEnabled: options['refunds-enabled'] === 'true',
   };
 }
@@ -34,53 +35,20 @@ async function main() {
   const options = parseOptions(process.argv.slice(2));
   const journal = await openJournal(options.journalPath);
   const transport = createSharedNetTransport(options);
-  const pause = (ms) => new Promise((resolvePause) => setTimeout(resolvePause, ms));
+  const log = async (message) => {
+    const line = `${new Date().toISOString()} ${message}\n`;
+    process.stderr.write(line);
+    try { await appendFile(options.logPath, line, { mode: 0o600 }); }
+    catch (error) { process.stderr.write(`Could not write worker log: ${error.message}\n`); }
+  };
   let stopping = false;
   process.once('SIGINT', () => { stopping = true; });
   process.once('SIGTERM', () => { stopping = true; });
   try {
-    let lastOrphanScan = 0;
-    let lastRefundScan = 0;
-    while (!stopping) {
-      for (const pending of journal.snapshot().pending_messages) {
-        const outcome = await handleRoomMessage({ message: pending, transport, journal, adapt: runAdapter,
-          price: options.price, sellerPrincipalId: options.sellerPrincipalId });
-        if (outcome.status !== 'retry_later') await journal.removeMessage(pending.id);
-      }
-      let hasMore;
-      do {
-        const page = await transport.readPage(journal.snapshot().cursor);
-        for (const message of page.items) {
-          const outcome = await handleRoomMessage({ message, transport, journal, adapt: runAdapter,
-            price: options.price, sellerPrincipalId: options.sellerPrincipalId });
-          if (outcome.status === 'retry_later') await journal.queueMessage(message);
-          await journal.advanceCursor(message.sequence);
-        }
-        hasMore = page.has_more;
-      } while (hasMore && !stopping);
-
-      if (options.graceMs !== null && Date.now() - lastOrphanScan > 60000) {
-        const room = await transport.readAllOrderIds();
-        const ledger = await transport.transfersSince(options.serviceStartedAt);
-        const staged = await stageOrphanRefunds({ transfers: ledger.transfers, seenOrderIds: room.orderIds,
-          journal, sellerPrincipalId: options.sellerPrincipalId, serviceStartedAt: options.serviceStartedAt,
-          now: new Date().toISOString(), graceMs: options.graceMs,
-          historyComplete: room.historyComplete && ledger.historyComplete });
-        if (staged.length) process.stderr.write(`Staged ${staged.length} orphan refund(s) for reconciliation.\n`);
-        lastOrphanScan = Date.now();
-      }
-      if (Date.now() - lastRefundScan > 30000) {
-        for (const record of journal.snapshot().records) {
-          const outcome = await processRefundRecord({ record, transport, journal,
-            sellerPrincipalId: options.sellerPrincipalId, refundsEnabled: options.refundsEnabled });
-          if (outcome.status === 'manual_reconciliation') {
-            process.stderr.write(`Refund for ${record.order_id} needs manual ledger reconciliation.\n`);
-          }
-        }
-        lastRefundScan = Date.now();
-      }
-      if (!stopping) await pause(2000);
-    }
+    await superviseWorker({ journal, transport, adapt: runAdapter, price: options.price,
+      sellerPrincipalId: options.sellerPrincipalId, serviceStartedAt: options.serviceStartedAt,
+      graceMs: options.graceMs, refundsEnabled: options.refundsEnabled, log },
+    { shouldStop: () => stopping });
   } finally {
     await journal.close();
   }

@@ -38,3 +38,58 @@ test('CLI transport normalizes ledger fields and preserves artifact bytes', asyn
   assert.deepEqual((await transport.readPage(0)).items, []);
   assert.deepEqual(calls, ['ledger', 'download', 'upload', 'say', 'read']);
 });
+
+test('download distinguishes artifact-specific failures from general transport failures', async () => {
+  let reason = 'artifact_not_found: SharedNet rejected the request';
+  const transport = createSharedNetTransport({ roomDir: '/joined-room', seatId: 'i_AbCdEfGhIj',
+    commandRunner: async () => { throw new Error(reason); },
+  });
+  assert.equal((await transport.download('art_AbCdEfGhIj')).status, 'confirmed_failure');
+  reason = 'npx timed out';
+  assert.equal((await transport.download('art_AbCdEfGhIj')).status, 'temporary_error');
+});
+
+test('download refuses more than 1 MiB before reading the file', async () => {
+  const bytes = Buffer.alloc(1024 * 1024 + 1);
+  const transport = createSharedNetTransport({ roomDir: '/joined-room', seatId: 'i_AbCdEfGhIj',
+    commandRunner: async (_verb, args) => {
+      await writeFile(args[args.indexOf('--out') + 1], bytes);
+      return { sha256: createHash('sha256').update(bytes).digest('hex'), verified: true };
+    },
+  });
+  assert.deepEqual(await transport.download('art_AbCdEfGhIj'),
+    { status: 'too_large', size_bytes: bytes.length });
+});
+
+test('legacy order-index backfill uses filtered room reads', async () => {
+  const calls = [];
+  const transport = createSharedNetTransport({ roomDir: '/joined-room', seatId: 'i_AbCdEfGhIj',
+    commandRunner: async (verb, args) => {
+      calls.push([verb, args]);
+      return { items: [], has_more: false };
+    },
+  });
+  assert.deepEqual(await transport.readAllOrderIds(), { orderIds: [], historyComplete: true });
+  assert.deepEqual(calls[0], ['read', ['--after', '0', '--grep', 'fieldtrace.order', '--limit', '100']]);
+});
+
+test('refund notice search accepts only this worker seat and supports room posts', async () => {
+  const calls = [];
+  const content = JSON.stringify({ type: 'fieldtrace.refund.v1', refund_transfer_id: 'txn_ZyXwVuTsRq' });
+  const transport = createSharedNetTransport({ roomDir: '/joined-room', seatId: 'i_AbCdEfGhIj',
+    commandRunner: async (verb, args) => {
+      calls.push([verb, args]);
+      if (verb === 'read') return { items: [
+        { id: 'msg_AbCdEfGhI1', sender_instance_id: 'i_OtherSeat1', content },
+        { id: 'msg_AbCdEfGhI2', sender_instance_id: 'i_AbCdEfGhIj', content },
+      ], has_more: false };
+      if (verb === 'say') return { message: { id: 'msg_ZyXwVuTsRq' } };
+      throw new Error(`Unexpected ${verb}`);
+    },
+  });
+  assert.deepEqual(await transport.findRefundNotice('txn_ZyXwVuTsRq'),
+    { message_id: 'msg_AbCdEfGhI2' });
+  assert.deepEqual(await transport.post(content), { message_id: 'msg_ZyXwVuTsRq' });
+  assert.deepEqual(calls[0], ['read', ['--after', '0', '--grep', 'txn_ZyXwVuTsRq', '--limit', '100']]);
+  assert.deepEqual(calls[1], ['say', [content]]);
+});

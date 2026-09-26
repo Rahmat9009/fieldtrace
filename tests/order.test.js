@@ -62,6 +62,7 @@ test('missing or altered payload takes a refund path only after payment verifica
   const missing = assessOrder({ order, transfer, artifact: { status: 'missing' }, ...context });
   assert.equal(missing.status, 'refund_required');
   assert.equal(missing.refund_amount, 8);
+  assert.equal(assessOrder({ order, transfer, artifact: { status: 'too_large' }, ...context }).code, 'artifact_too_large');
   assert.equal(assessOrder({ order, transfer, artifact: { status: 'temporary_error' }, ...context }).status, 'retry_later');
   assert.equal(assessOrder({ order, transfer, artifact: { status: 'found', bytes: Buffer.from('changed') }, ...context }).code, 'artifact_hash_mismatch');
   assert.equal(assessOrder({ order, transfer: { ...transfer, to: buyer }, artifact: { status: 'missing' }, ...context }).status, 'rejected');
@@ -98,7 +99,7 @@ test('orphan scan only proposes refunds after a complete, aged ledger and room s
   assert.equal(scan().length, 1);
   assert.equal(scan()[0].refund_amount, 8);
   assert.deepEqual(scan({ historyComplete: false }), []);
-  assert.deepEqual(scan({ seenOrderIds: [orderId] }), []);
+  assert.equal(scan({ seenOrderIds: [orderId] })[0].code, 'order_unmatched');
   assert.deepEqual(scan({ prior: [{ transfer_id: transferId }] }), []);
   assert.deepEqual(scan({ now: '2026-09-25T12:01:00Z' }), []);
 });

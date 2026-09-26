@@ -4,6 +4,7 @@ import {
 } from '../client/order.js';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+export const MAX_ARTIFACT_BYTES = 1024 * 1024;
 
 function parseEnvelope(message, type) {
   if (typeof message?.content !== 'string') return null;
@@ -70,10 +71,11 @@ export function verifyTransfer(order, transfer, { sellerPrincipalId, price }) {
 function inspectArtifact(artifact, expectedSha256) {
   if (!artifact || artifact.status === 'temporary_error') return { status: 'retry_later', code: 'artifact_unavailable' };
   if (artifact.status === 'missing') return { status: 'invalid', code: 'artifact_missing' };
+  if (artifact.status === 'too_large') return { status: 'invalid', code: 'artifact_too_large' };
   if (artifact.status !== 'found' || !Buffer.isBuffer(artifact.bytes)) {
     return { status: 'retry_later', code: 'artifact_unavailable' };
   }
-  if (artifact.bytes.length > 1024 * 1024) return { status: 'invalid', code: 'artifact_too_large' };
+  if (artifact.bytes.length > MAX_ARTIFACT_BYTES) return { status: 'invalid', code: 'artifact_too_large' };
   const digest = createHash('sha256').update(artifact.bytes).digest('hex');
   if (digest !== expectedSha256) return { status: 'invalid', code: 'artifact_hash_mismatch' };
   let request;
@@ -147,6 +149,8 @@ export function findOrphanPayments({ transfers, seenOrderIds, prior = [], seller
   if (!Number.isFinite(start) || !Number.isFinite(current)) return [];
   const seen = new Set(seenOrderIds);
   const recorded = new Set(prior.map((record) => record.transfer_id));
+  const recordedOrders = new Set(prior.flatMap((record) =>
+    [record.order_id, record.claimed_order_id].filter(Boolean)));
   return transfers.filter((transfer) => {
     const created = Date.parse(transfer.created_at);
     return transfer.to === sellerPrincipalId
@@ -154,9 +158,12 @@ export function findOrphanPayments({ transfers, seenOrderIds, prior = [], seller
       && ORDER_ID_PATTERN.test(transfer.memo ?? '')
       && Number.isSafeInteger(transfer.amount) && transfer.amount > 0
       && Number.isFinite(created) && created >= start && current - created >= graceMs
-      && !seen.has(transfer.memo) && !recorded.has(transfer.id);
+      && !recorded.has(transfer.id);
   }).map((transfer) => ({
-    status: 'refund_required', code: 'order_message_missing', order_id: transfer.memo,
+    status: 'refund_required',
+    code: recordedOrders.has(transfer.memo) ? 'order_id_reused'
+      : seen.has(transfer.memo) ? 'order_unmatched' : 'order_message_missing',
+    order_id: transfer.memo,
     transfer_id: transfer.id, buyer_principal_id: transfer.from, refund_amount: transfer.amount,
   }));
 }
