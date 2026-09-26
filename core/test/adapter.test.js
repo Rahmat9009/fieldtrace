@@ -22,6 +22,9 @@ test('preflight checks conversion without returning usable output', () => {
   assert.equal(result.status, 'ok');
   assert.equal(result.target, 'example_inferred_for_this_request');
   assert.equal(result.output, undefined);
+  assert.equal(result.changes, undefined);
+  assert.equal(result.provenance, undefined);
+  assert.equal(result.change_count, 1);
   assert.equal(result.validation.passed, true);
 });
 
