@@ -101,6 +101,8 @@ This is the evidence for judges. Every step below is a real room message.
 | 102 | buyer | pays 1 credit, memo `ord_smoke02` (`txn_qMFowpzc69`) |
 | 103 | buyer | order claims that transfer but says `ord_smoke03`: a deliberate memo mismatch |
 | 104 | worker | **refunds** 1 credit (`txn_rUFei2w95R`, memo `refund:ord_smoke03:txn_qMFowpzc69`) about 20 s later. Nothing was delivered and nothing was kept. |
+| 109 | buyer | `fieldtrace.preflight.v1` for demo B's request (`art_pbajmVbpgi`) |
+| 110 | worker | `preflight.result.v1`: `convertible: false`, `unsafe_coercion` at `/price`. It refused before any payment. |
 
 Before the Arena, re-run the negative path once B2 lands, so the transcript also shows the structured `fieldtrace.refund.v1` reply.
 
