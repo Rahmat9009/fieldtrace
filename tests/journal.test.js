@@ -36,3 +36,28 @@ test('journal survives reopen and prevents duplicate transfer fulfillment', asyn
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('denied preflights do not consume slots after admitted requests leave the window', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fieldtrace-preflight-rate-'));
+  const journal = await openJournal(join(dir, 'orders.json'));
+  const buyer = 'p_AbCdEfGhIj';
+  try {
+    for (let index = 0; index < 5; index++) {
+      assert.equal((await journal.checkPreflightRate(`msg_first${index}`, buyer,
+        '2026-09-25T12:00:00Z')).allowed, true);
+    }
+    assert.equal((await journal.checkPreflightRate('msg_denied', buyer,
+      '2026-09-25T12:01:00Z')).allowed, false);
+    for (let index = 0; index < 5; index++) {
+      assert.equal((await journal.checkPreflightRate(`msg_next${index}`, buyer,
+        '2026-09-25T12:10:01Z')).allowed, true);
+    }
+    assert.equal((await journal.checkPreflightRate('msg_denied', buyer,
+      '2026-09-25T12:10:01Z')).allowed, false);
+    assert.equal((await journal.checkPreflightRate('msg_next5', buyer,
+      '2026-09-25T12:10:01Z')).allowed, false);
+  } finally {
+    await journal.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
