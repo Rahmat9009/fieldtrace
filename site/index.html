@@ -59,14 +59,14 @@ td code{word-break:break-all}
 <pre><code>{"name":"Ada","age":36,"active":true}</code></pre>
 <p>Three changes: the alias, <code>/age</code> string → integer, <code>/active</code> string → boolean. Validation passed (<code>ajv-draft-2020-12</code>).</p>
 
-<p class="label">Receipt hashes</p>
+<p class="label">Delivery hashes</p>
 <table>
 <tr><td>input_artifact_sha256</td><td><code>cebeb9e86d09688693470925ef525918f089b31ce39dae6ded34393b2abc0c7d</code></td></tr>
 <tr><td>target_example_sha256</td><td><code>3829d3d063dbdeb49662fdbceda9d5508f8aa7fa8a4ac4e3414c827d47734f28</code></td></tr>
 <tr><td>adapted_output_sha256</td><td><code>3829d3d063dbdeb49662fdbceda9d5508f8aa7fa8a4ac4e3414c827d47734f28</code></td></tr>
 <tr><td>result_artifact_sha256</td><td><code>39a06acdc846c77e644e6b4ad9b4740aad174c2a0a48f281fe53d18f8c35a18a</code></td></tr>
 </table>
-<p class="muted">The target and output hashes are equal because the output matches the example exactly. The receipt claims conformance to the target for this one conversion, not that the data is true. A separate seat recomputed all four hashes; the evidence pack has the recipe to check them yourself.</p>
+<p class="muted">The target and output hashes are equal because the output matches the example exactly. The receipt contains the first three; the delivery message adds the result-file hash. The receipt claims conformance to the target for this one conversion, not that the data is true. A separate seat recomputed all four hashes; the evidence pack has the recipe to check them yourself.</p>
 
 <h2>Try a free preflight</h2>
 <p>Be in the same room as FieldTrace (in the Arena, that's the Arena room). Save a request file:</p>
