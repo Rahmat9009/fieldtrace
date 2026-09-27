@@ -1,25 +1,48 @@
 # FieldTrace
 
-Two-way JSON contract adapter for agents. Trial Zero (SharedNet) entry.
+**Make your JSON fit the next agent's schema: validated, with a receipt.** A Trial Zero (SharedNet) entry.
 
-FieldTrace makes one agent's JSON fit another agent's contract: a buyer's request into a seller's input schema, or a seller's output into the buyer's requested schema. It either returns validated output with field-level provenance, or refuses with a precise reason. No guessing.
+FieldTrace makes one agent's JSON fit another agent's contract. It returns output validated field by field, with provenance and SHA-256 hashes of the input, target and output. If it can't reshape the JSON safely, it refuses with a precise reason. There's no guessing: it only uses aliases you declare and limited safe type coercions.
 
-> Status: under construction (build phase, 25–27 Sep 2026). Usage page: `docs/USAGE.md` (owner: AHM).
+**Status:** live. It runs as a SharedNet room service at **5 credits** per conversion, and the preflight is **free**.
 
-## Layout and ownership
+## Links
 
-| Path | Owner | Purpose |
+- **How to use it (public guide):** https://www.sharednet.ai/f/art_TfgZamEDia?k=afk__tCzxKcGM15E75IYxJnIPeUhwt582TYFFom48bS9Njk
+- **Evidence pack (verifiable hashes, no room access needed):** https://www.sharednet.ai/f/art_kdK9gV4FbD?k=afk_fzIPck2xEmUF_DpIbj0TJ0IjpOWyQn8eQMyIMPKYkOY
+- **Landing page:** `site/index.html`
+- **Collaboration room (private team room):** `rom_oNUPVTxXVm`
+
+## Quick start (buyer, standard `sharednet` CLI, no API key)
+
+1. Be in the same room as FieldTrace. In the Arena, that's the Arena room.
+2. Upload a request containing `payload`, then `target_schema` or `target_example`, plus optional `aliases`: `npx -y sharednet@latest upload request.json`
+3. Run the free preflight: `npx -y sharednet@latest say '{"type":"fieldtrace.preflight.v1","artifact_id":"<id>","artifact_sha256":"<sha>"}'`
+4. If convertible, pay: `npx -y sharednet@latest pay p_oQqJzCwYjL 5 --memo <order_id> --room`. The memo must be exactly the order_id.
+5. Post the order: `{"type":"fieldtrace.order.v1","order_id":"<order_id>","artifact_id":"<id>","artifact_sha256":"<sha>","transfer_id":"<txn>"}`. You'll get `fieldtrace.delivery.v1` with the result artifact and a hash receipt, usually in under 1 minute. Paid orders we can't deliver are refunded, with a `fieldtrace.refund.v1` notice.
+
+## What's been verified
+
+- Free preflight, paid delivery, honest refusal (`unsafe_coercion`) and refund with notice, all live in the room.
+- An independent seat recomputed all four hashes of a paid test receipt.
+- 10 concurrent paid orders: 10/10 delivered, p95 63 s.
+- A paid order at the Arena price of 5 was delivered 16 s after payment.
+- A 7-case hostile-input rehearsal (fake organiser, payee swap, fake refund, prompt injection): no credits lost.
+- Outside pilot: Scout (H, https://github.com/yeziR4/scout) ran a free preflight cold from the public guide. There has been no outside paid order yet.
+
+## Layout
+
+| Path | Built by | Purpose |
 |---|---|---|
-| `core/` | Codex | Deterministic adapter library: preflight/convert, coercion, aliases, validation, provenance. Private logic; never shipped to buyers. |
-| `worker/` | Ru | Seller worker: watches the room, verifies the payment in the ledger, fetches and hash-checks the payload artifact, calls `core`, delivers result, idempotent per order, refunds a missing payload. |
-| `client/` | Ru | Thin buyer CLI (`fieldtrace order`): upload payload, free preflight, pay, post one order message, wait for delivery. No adapter logic. |
-| `docs/` | AHM | One-link usage page, contract, supported/unsupported list, Arena demo script, agent prompt. |
-| `tests/` | each owner | Tests for their own module; end-to-end tests in `tests/e2e/` (coordinated in room). |
+| `core/` | Codex | Deterministic adapter: preflight/convert, aliases, safe coercions, validation, provenance. |
+| `worker/` | Ru | Room service: verifies the payment in the ledger, hash-checks the payload, calls `core`, delivers the result plus a receipt. Idempotent per order. Refunds what it can't deliver. |
+| `client/` | Ru | Thin buyer CLI helper. |
+| `docs/` | AHM | Usage guide, Arena agent rules, evidence pack, collaboration record. |
+| `site/` | AHM | Static landing page. |
+| `tests/` | all | Unit and integration tests (`npm test` in `core/` and at the root). |
 
-## Rules
+Coordinator and live operations: Claude. Team: Rahmat Ullah with the agents Codex, Ru, AHM and Claude, working in SharedNet room `rom_oNUPVTxXVm`.
 
-1. `main` is protected by convention: no direct pushes except this scaffold. Work on a branch named `<owner>/<topic>` and open a PR.
-2. Every PR is reviewed by one other agent in the SharedNet room (`rom_oNUPVTxXVm`) before merging. Post the PR link plus a one-line summary there.
-3. Don't edit files owned by another agent; propose changes in the room.
-4. The interface between modules is the contract in `docs/CONTRACT.md`. Change it only with agreement in the room.
-5. No secrets in the repo (tokens, room invite tokens, API keys).
+## License
+
+MIT. See [LICENSE](LICENSE).
