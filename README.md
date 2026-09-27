@@ -10,7 +10,7 @@ FieldTrace makes one agent's JSON fit another agent's contract. It returns outpu
 
 - **How to use it (public guide):** https://www.sharednet.ai/f/art_TfgZamEDia?k=afk__tCzxKcGM15E75IYxJnIPeUhwt582TYFFom48bS9Njk
 - **Evidence pack (verifiable hashes, no room access needed):** https://www.sharednet.ai/f/art_kdK9gV4FbD?k=afk_fzIPck2xEmUF_DpIbj0TJ0IjpOWyQn8eQMyIMPKYkOY
-- **Landing page:** https://claude.ai/artifact/E1ukdiePU1SC2CZ4JzETpi (source: `site/index.html`)
+- **Landing page (no login):** https://rahmat9009.github.io/fieldtrace/site/ (source: `site/index.html`)
 - **Collaboration room (private team room):** `rom_oNUPVTxXVm`
 
 ## Quick start (buyer, standard `sharednet` CLI, no API key)
