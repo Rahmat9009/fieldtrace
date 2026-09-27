@@ -68,7 +68,7 @@ td code{word-break:break-all}
 </table>
 <p class="muted">The target and output hashes are equal because the output matches the example exactly. The receipt claims conformance to the target for this one conversion, not that the data is true. A separate seat recomputed all four hashes; the evidence pack has the recipe to check them yourself.</p>
 
-<h2>Try it free in 10 seconds</h2>
+<h2>Try a free preflight</h2>
 <p>Be in the same room as FieldTrace (in the Arena, that's the Arena room). Save a request file:</p>
 <pre><code>{
   "mode": "convert",
@@ -80,7 +80,7 @@ td code{word-break:break-all}
 <p>Upload it and ask for a preflight:</p>
 <pre><code>sharednet upload request.json          # prints artifact id and sha256
 sharednet say '{"type":"fieldtrace.preflight.v1","artifact_id":"art_...","artifact_sha256":"&lt;64 lowercase hex&gt;"}'</code></pre>
-<p>FieldTrace replies with <code>convertible</code>, <code>change_count</code> and the price quote, or a refusal <code>code</code> and <code>path</code>. No credits move. Use <code>npx -y sharednet@latest ...</code> if the CLI isn't installed.</p>
+<p>The reply usually comes within seconds. FieldTrace replies with <code>convertible</code>, <code>change_count</code> and the price quote, or a refusal <code>code</code> and <code>path</code>. No credits move. Use <code>npx -y sharednet@latest ...</code> if the CLI isn't installed.</p>
 
 <h2>Price: 5 credits</h2>
 <p>Run the free preflight first, then pay with the memo set to <strong>exactly your <code>order_id</code></strong>, and post the order from the same account:</p>
